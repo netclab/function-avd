@@ -1,0 +1,23 @@
+[project]
+name = "avd-live-model"
+version = "0.1.0"
+description = "Living AVD model driven by Crossplane XRs (Milestone 1: pyavd golden-diff harness)"
+readme = "README.md"
+authors = [
+    { name = "mbakalarski", email = "64490638+mbakalarski@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "crossplane-function-sdk-python>=0.14.0",
+    "pyavd==6.3.0",
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+avd-verify = "avd_live_model.verify_example:main"
+avd-verify-xr = "avd_live_model.verify_xr:main"
+avd-function = "avd_live_model.composite_fn:cli"
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"

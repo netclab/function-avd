@@ -1,0 +1,218 @@
+apiVersion: avd.netclab.dev/v1alpha1
+kind: Fabric
+metadata:
+  name: l2ls-fabric
+  namespace: default
+spec:
+  fabricName: DC1
+  design:
+    eos_designs_documentation:
+      connected_endpoints: true
+    dns_settings:
+      servers:
+      - ip_address: 8.8.4.4
+      - ip_address: 8.8.8.8
+    ntp_settings:
+      server_vrf: use_mgmt_interface_vrf
+      servers:
+      - name: time.google.com
+      - name: pool.ntp.org
+    aaa_settings:
+      local_users:
+      - name: admin
+        privilege: 15
+        role: network-admin
+        no_password: true
+      - name: arista
+        privilege: 15
+        role: network-admin
+        sha512_password: $6$Enl0WfE32FthwyiJ$yTyGaEJ2uPKLU.F7314YtB7J1jrzrMi7ogXIRTEHQfLdLgKWWmr1UvNlZLN6AyuxET7G5aH3AI9OYRzxVTkB1.
+      authorization:
+        exec:
+          default: local
+      authentication:
+        policies:
+          local:
+            allow_nopassword: true
+    mgmt_gateway: 172.16.100.1
+    management_eapi:
+      enabled: true
+    connected_endpoints_keys:
+    - key: servers
+      type: server
+    - key: firewalls
+      type: firewall
+    - key: routers
+      type: router
+    port_profiles:
+    - profile: PP-DEFAULTS
+      spanning_tree_portfast: edge
+    - profile: PP-BLUE
+      mode: access
+      vlans: '10'
+      parent_profile: PP-DEFAULTS
+    - profile: PP-GREEN
+      mode: access
+      vlans: '20'
+      parent_profile: PP-DEFAULTS
+    - profile: PP-ORANGE
+      mode: access
+      vlans: '30'
+      parent_profile: PP-DEFAULTS
+    - profile: PP-FIREWALL
+      mode: trunk
+      vlans: 10,20,30
+    servers:
+    - name: HostA
+      rack: POD1
+      adapters:
+      - endpoint_ports:
+        - Eth1
+        switch_ports:
+        - Ethernet3
+        switches:
+        - LEAF1
+        profile: PP-BLUE
+    - name: HostB
+      rack: POD1
+      adapters:
+      - endpoint_ports:
+        - Eth1
+        switch_ports:
+        - Ethernet3
+        switches:
+        - LEAF2
+        profile: PP-GREEN
+    - name: HostC
+      rack: POD2
+      adapters:
+      - endpoint_ports:
+        - Eth1
+        switch_ports:
+        - Ethernet3
+        switches:
+        - LEAF3
+        profile: PP-BLUE
+    - name: Host2
+      rack: POD2
+      adapters:
+      - endpoint_ports:
+        - Eth1
+        switch_ports:
+        - Ethernet3
+        switches:
+        - LEAF4
+        profile: PP-ORANGE
+    firewalls:
+    - name: FIREWALL
+      adapters:
+      - endpoint_ports:
+        - Eth1
+        - Eth2
+        switch_ports:
+        - Ethernet5
+        - Ethernet5
+        switches:
+        - SPINE1
+        - SPINE2
+        profile: PP-FIREWALL
+        port_channel:
+          mode: active
+    tenants:
+    - name: MY_FABRIC
+      l2vlans:
+      - id: 10
+        name: BLUE-NET
+        tags:
+        - bluezone
+      - id: 20
+        name: GREEN-NET
+        tags:
+        - greenzone
+      - id: 30
+        name: ORANGE-NET
+        tags:
+        - orangezone
+    l2leaf:
+      defaults:
+        platform: cEOSLab
+        mlag_peer_ipv4_pool: 192.168.0.0/24
+        uplink_switches:
+        - SPINE1
+        - SPINE2
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        mlag_interfaces:
+        - Ethernet47
+        - Ethernet48
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 16384
+      node_groups:
+      - group: RACK1
+        mlag: true
+        filter:
+          tags:
+          - bluezone
+          - greenzone
+        nodes:
+        - name: LEAF1
+          id: 1
+          mgmt_ip: 172.16.100.105/24
+          uplink_switch_interfaces:
+          - Ethernet1
+          - Ethernet1
+        - name: LEAF2
+          id: 2
+          mgmt_ip: 172.16.100.106/24
+          uplink_switch_interfaces:
+          - Ethernet2
+          - Ethernet2
+      - group: RACK2
+        mlag: true
+        filter:
+          tags:
+          - bluezone
+          - orangezone
+        nodes:
+        - name: LEAF3
+          id: 3
+          mgmt_ip: 172.16.100.107/24
+          uplink_switch_interfaces:
+          - Ethernet3
+          - Ethernet3
+        - name: LEAF4
+          id: 4
+          mgmt_ip: 172.16.100.108/24
+          uplink_switch_interfaces:
+          - Ethernet4
+          - Ethernet4
+    l2spine:
+      defaults:
+        platform: cEOSLab
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 4096
+        mlag_peer_ipv4_pool: 192.168.0.0/24
+        mlag_interfaces:
+        - Ethernet47
+        - Ethernet48
+      node_groups:
+      - group: SPINES
+        nodes:
+        - name: SPINE1
+          id: 1
+          mgmt_ip: 172.16.100.101/24
+        - name: SPINE2
+          id: 2
+          mgmt_ip: 172.16.100.102/24
+    default_node_types:
+    - node_type: l2leaf
+      match_hostnames:
+      - ^LEAF1$
+      - ^LEAF2$
+      - ^LEAF3$
+      - ^LEAF4$
+    - node_type: l2spine
+      match_hostnames:
+      - ^SPINE1$
+      - ^SPINE2$

@@ -1,0 +1,81 @@
+# CompositeResourceDefinition for an AVD fabric.
+#
+# One Fabric == one AVD fabric (a single `fabric_name`). This is deliberate:
+# AVD facts are fabric-wide (get_avd_facts needs every device at once), so the
+# living model must be reconciled per fabric, not per device. A composite
+# function expands one Fabric into per-device outputs.
+#
+# spec.design carries a fabric-wide AVD eos_designs document. Its inner shape is
+# AVD's own data model (pinned to the avd/ submodule version), which is far too
+# large to restate in OpenAPI and would drift from AVD; it is therefore kept
+# structurally open and validated at reconcile time by pyavd, with results
+# surfaced on status. Device roles are resolved inside the document via
+# `default_node_types` / node-type blocks.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: fabrics.avd.netclab.dev
+spec:
+  # Crossplane v2: namespaced composite resources (no legacy claim needed).
+  scope: Namespaced
+  group: avd.netclab.dev
+  names:
+    kind: Fabric
+    plural: fabrics
+  defaultCompositionRef:
+    name: fabric-avd
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                fabricName:
+                  type: string
+                  description: >-
+                    AVD `fabric_name`. Promoted to a typed field for
+                    selectors/status; injected into the design at reconcile.
+                  minLength: 1
+                design:
+                  type: object
+                  description: >-
+                    Fabric-wide AVD eos_designs input document (node-type blocks,
+                    default_node_types, tenants, connected endpoints, ...).
+                    Validated by pyavd; violations reported on status.
+                  x-kubernetes-preserve-unknown-fields: true
+              required:
+                - fabricName
+                - design
+            status:
+              type: object
+              properties:
+                fabricName:
+                  type: string
+                deviceCount:
+                  type: integer
+                  description: Devices discovered in the design.
+                devices:
+                  type: array
+                  description: Devices resolved from the design and their roles.
+                  items:
+                    type: object
+                    properties:
+                      hostname:
+                        type: string
+                      nodeType:
+                        type: string
+                validation:
+                  type: object
+                  description: Result of pyavd input validation for this fabric.
+                  properties:
+                    ok:
+                      type: boolean
+                    message:
+                      type: string
+              # Composite function may attach richer, evolving detail.
+              x-kubernetes-preserve-unknown-fields: true

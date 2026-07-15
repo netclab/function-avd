@@ -1,0 +1,211 @@
+apiVersion: avd.netclab.dev/v1alpha1
+kind: Fabric
+metadata:
+  name: single-dc-multipod-l3ls
+  namespace: default
+spec:
+  fabricName: FABRIC
+  design:
+    servers:
+    - name: host1
+      adapters:
+      - switch_ports:
+        - Ethernet5
+        - Ethernet5
+        switches:
+        - dc1-leaf1a
+        - dc1-leaf1b
+        vlans: 10
+        mode: access
+        spanning_tree_portfast: edge
+        port_channel:
+          mode: active
+    - name: host2
+      adapters:
+      - switch_ports:
+        - Ethernet5
+        - Ethernet5
+        switches:
+        - dc1-leaf2a
+        - dc1-leaf2b
+        vlans: 20
+        mode: access
+        spanning_tree_portfast: edge
+        port_channel:
+          mode: active
+    tenants:
+    - name: ACME
+      mac_vrf_vni_base: 10000
+      vrfs:
+      - name: VRF_A
+        vrf_vni: 10
+        svis:
+        - id: 10
+          name: DMZ
+          enabled: true
+          ip_address_virtual: 10.1.10.1/24
+        - id: 20
+          name: Internal
+          enabled: true
+          ip_address_virtual: 10.1.20.1/24
+    eos_designs_documentation:
+      topology_csv: true
+      p2p_links_csv: true
+    management_eapi:
+      enabled: true
+    mgmt_gateway: 172.16.1.1
+    evpn_vlan_aware_bundles: true
+    default_node_types:
+    - node_type: super-spine
+      match_hostnames:
+      - .*-ss.*
+    - node_type: spine
+      match_hostnames:
+      - .*-spine.*
+    - node_type: l3leaf
+      match_hostnames:
+      - .*-leaf.*
+    default_interfaces:
+    - types:
+      - super-spine
+      platforms:
+      - default
+      downlink_interfaces:
+      - Ethernet1-4
+    - types:
+      - spine
+      platforms:
+      - default
+      uplink_interfaces:
+      - Ethernet1-2
+      downlink_interfaces:
+      - Ethernet3-4
+    - types:
+      - l3leaf
+      platforms:
+      - default
+      uplink_interfaces:
+      - Ethernet1-2
+      mlag_interfaces:
+      - Ethernet3-4
+    aaa_settings:
+      local_users:
+      - name: admin
+        privilege: 15
+        role: network-admin
+        no_password: true
+      - name: arista
+        privilege: 15
+        role: network-admin
+        sha512_password: $6$Enl0WfE32FthwyiJ$yTyGaEJ2uPKLU.F7314YtB7J1jrzrMi7ogXIRTEHQfLdLgKWWmr1UvNlZLN6AyuxET7G5aH3AI9OYRzxVTkB1.
+    bfd_multihop:
+      interval: 1200
+      min_rx: 1200
+      multiplier: 3
+    dns_settings:
+      servers:
+      - ip_address: 192.168.1.1
+    ntp_settings:
+      server_vrf: use_mgmt_interface_vrf
+      servers:
+      - name: 0.pool.ntp.org
+    spine:
+      defaults:
+        platform: cEOSLab
+        loopback_ipv4_pool: 192.168.101.0/24
+        uplink_switches:
+        - dc1-ss1
+        - dc1-ss2
+        uplink_ipv4_pool: 192.168.103.0/24
+        evpn_route_servers:
+        - dc1-ss1
+        - dc1-ss2
+      nodes:
+      - name: dc1-spine1
+        id: 11
+        mgmt_ip: 172.16.1.11/24
+        uplink_switch_interfaces:
+        - Ethernet1
+        - Ethernet1
+        bgp_as: 65001
+      - name: dc1-spine2
+        id: 12
+        mgmt_ip: 172.16.1.12/24
+        uplink_switch_interfaces:
+        - Ethernet2
+        - Ethernet2
+        bgp_as: 65001
+      - name: dc1-spine3
+        id: 13
+        mgmt_ip: 172.16.1.13/24
+        uplink_switch_interfaces:
+        - Ethernet3
+        - Ethernet3
+        bgp_as: 65002
+      - name: dc1-spine4
+        id: 14
+        mgmt_ip: 172.16.1.14/24
+        uplink_switch_interfaces:
+        - Ethernet4
+        - Ethernet4
+        bgp_as: 65002
+    l3leaf:
+      defaults:
+        bgp_as: 65100-65199
+        platform: cEOSLab
+        loopback_ipv4_pool: 192.168.101.0/24
+        vtep_loopback_ipv4_pool: 192.168.102.0/24
+        uplink_ipv4_pool: 192.168.103.0/24
+        mlag_peer_ipv4_pool: 10.255.252.0/24
+        mlag_peer_l3_ipv4_pool: 10.255.251.0/24
+        virtual_router_mac_address: 00:1c:73:00:00:99
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 16384
+      node_groups:
+      - group: dc1-leaf1
+        nodes:
+        - name: dc1-leaf1a
+          id: 1
+          mgmt_ip: 172.16.1.21/24
+          uplink_switch_interfaces:
+          - Ethernet3
+          - Ethernet3
+        - name: dc1-leaf1b
+          id: 2
+          mgmt_ip: 172.16.1.22/24
+          uplink_switch_interfaces:
+          - Ethernet4
+          - Ethernet4
+        uplink_switches:
+        - dc1-spine1
+        - dc1-spine2
+      - group: dc1-leaf2
+        nodes:
+        - name: dc1-leaf2a
+          id: 3
+          mgmt_ip: 172.16.1.23/24
+          uplink_switch_interfaces:
+          - Ethernet3
+          - Ethernet3
+        - name: dc1-leaf2b
+          id: 4
+          mgmt_ip: 172.16.1.24/24
+          uplink_switch_interfaces:
+          - Ethernet4
+          - Ethernet4
+        uplink_switches:
+        - dc1-spine3
+        - dc1-spine4
+    super_spine:
+      defaults:
+        platform: cEOSLab
+        bgp_as: 65000
+        loopback_ipv4_pool: 192.168.101.0/24
+        evpn_role: server
+      nodes:
+      - name: dc1-ss1
+        id: 201
+        mgmt_ip: 172.16.1.25/24
+      - name: dc1-ss2
+        id: 202
+        mgmt_ip: 172.16.1.26/24
