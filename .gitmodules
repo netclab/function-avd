@@ -1,0 +1,3 @@
+[submodule "avd"]
+	path = avd
+	url = https://github.com/aristanetworks/avd.git
