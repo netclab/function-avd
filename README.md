@@ -181,6 +181,44 @@ Gotchas encoded in `scripts/kind-up.sh` and the function:
 | `Dockerfile`, `package/crossplane.yaml` | Function runtime image + package metadata |
 | `scripts/kind-up.sh`, `scripts/kind-down.sh` | Reproducible cluster bring-up / teardown |
 
+## Testing
+
+```bash
+uv run pytest              # offline: engine fidelity, XR fold, Struct gotcha (~7s)
+uv run pytest -m e2e       # live cluster: kind-up.sh + an applied fabric (~2min)
+```
+
+| Path | Covers |
+|------|---------|
+| `tests/test_engine_fidelity.py` | Milestone 1 — 7 examples reproduce golden structured config |
+| `tests/test_xr_fold.py` | Milestone 2 — the Ansible→XR fold, over every discovered example |
+| `tests/test_normalize_numbers.py` | the protobuf-`Struct` double→int coercion |
+| `tests/test_e2e_device_layer.py` | drift/reclaim + steady-state idempotency, on a real cluster |
+
+`.github/workflows/ci.yml` gates every push and PR on the offline suite (it needs
+`submodules: true` — the golden configs the tests diff against live there). The
+e2e job builds the function image and installs Crossplane, so it is
+`workflow_dispatch` only: run it by hand when the function, compositions, or
+XRDs change.
+
+The two examples that don't fold are declared in `verify_xr.DEFERRED` with their
+reason, and treated as **strict** expected failures: if one starts folding, the
+suite fails and tells you to drop it, so a deferral can't quietly rot. That also
+makes `avd-verify-xr` exit 0 on the documented state, so it can gate CI.
+
+**What the e2e test pins** — the contract of the two-layer split, which nothing
+else checks. Pause the `Fabric` (`crossplane.io/paused=true`) so it stops
+propagating, patch `Device.spec.structuredConfig` directly, and the change still
+reaches the rendered ConfigMap: the Device is a *real* reconcile unit, which is
+what lets a config-push managed resource attach there. Unpause, and the Fabric
+rewrites `spec.structuredConfig` on its next pass (~1s) — `configHash` returns to
+the exact baseline. The Device is live, but not authoritative.
+
+> Under a tripped watch circuit breaker (`Responsive=False WatchCircuitOpen`,
+> which Crossplane opens during the initial create burst) a Device reconciles on
+> a throttle, so a *direct* Device patch can take ~15s to render rather than ~1s.
+> The e2e timeouts allow for it.
+
 ## Layout
 
 | Path | Purpose |

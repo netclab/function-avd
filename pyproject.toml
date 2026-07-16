@@ -18,6 +18,15 @@ avd-verify = "avd_live_model.verify_example:main"
 avd-verify-xr = "avd_live_model.verify_xr:main"
 avd-function = "avd_live_model.composite_fn:cli"
 
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# e2e needs a live cluster, so it is opt-in: `uv run pytest -m e2e`.
+addopts = "-m 'not e2e'"
+markers = ["e2e: requires a cluster from scripts/kind-up.sh with a fabric applied"]
+
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]
 build-backend = "uv_build"

@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: offline suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The AVD examples and their golden structured configs -- what the
+          # suite diffs against -- live in the submodule, so without it every
+          # fidelity test collects nothing.
+          submodules: true
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # --locked fails if uv.lock drifts from pyproject.toml, so a dependency
+      # bump can't land without its lock.
+      - run: uv sync --locked
+
+      - run: uv run pytest -q
+
+  e2e:
+    name: e2e on kind
+    # Builds the function image and installs Crossplane, so it is far too heavy
+    # to gate a PR: run it by hand from the Actions tab when the function,
+    # the compositions, or the XRDs change.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked
+
+      - name: Install kind + crossplane CLI
+        run: |
+          set -euo pipefail
+          # Matches the version the e2e scenario was proven against locally.
+          curl -sSLo ./kind https://kind.sigs.k8s.io/dl/v0.31.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          curl -sSL https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh | sh
+          sudo mv ./crossplane /usr/local/bin/crossplane
+          # kind-up.sh needs helm; the runner image ships it, but don't rely on that.
+          command -v helm >/dev/null || \
+            curl -sSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          kind --version
+          # --client only: plain `crossplane version` talks to the cluster, which
+          # does not exist yet, and would fail this step under `set -e`.
+          crossplane version --client
+
+      - name: Bring up the cluster
+        run: scripts/kind-up.sh
+
+      - name: Apply a fabric
+        run: |
+          kubectl --context kind-avd apply -f examples/fabric/single-dc-l3ls.yaml
+          kubectl --context kind-avd -n default wait --for=condition=Ready \
+            fabric/single-dc-l3ls --timeout=300s
+
+      - run: uv run pytest -m e2e -v
+
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl --context kind-avd -n default get fabric,device,cm -o wide || true
+          kubectl --context kind-avd -n default describe device || true
+          kubectl --context kind-avd -n crossplane-system logs -l app=crossplane --tail=200 || true
