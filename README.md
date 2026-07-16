@@ -2,244 +2,191 @@
 
 [![CI](https://github.com/netclab/netclab-avd/actions/workflows/ci.yml/badge.svg)](https://github.com/netclab/netclab-avd/actions/workflows/ci.yml)
 
-A **living AVD supermodel** driven by Crossplane XRs on Kubernetes.
+**Arista AVD configs, kept live by Kubernetes.** Instead of running Ansible to produce
+device configs once, a fabric is modelled as a Crossplane composite resource: edit the
+`Fabric`, and every affected device's config re-renders on reconcile — including the
+devices you didn't touch, because AVD's facts are fabric-wide.
+
+The engine is [pyavd](https://pypi.org/project/pyavd/) (pure Python, no Ansible),
+wrapped in a Crossplane composite function. Built against
+[Arista AVD](https://github.com/aristanetworks/avd) v6.3.0, pinned as a submodule under
+`avd/` — a read-only reference, and the source of the golden configs the tests diff
+against.
 
 > The distribution is `netclab-avd`; the import package is `avd_live_model`.
 
-Builds on [Arista AVD](https://github.com/aristanetworks/avd) v6.3.0, pinned as a
-git submodule under `avd/` (read-only reference).
+## Quick start
 
-## Goal
-
-Make the AVD structured config *living* — regenerated dynamically from input
-objects delivered as **Crossplane Composite Resources (XRs)**, instead of a
-static Ansible run. A Crossplane **Python composite function** reconciles one
-`Fabric` XR into per-device structured configs.
-
-The engine is [`pyavd`](https://pypi.org/project/pyavd/) (pure Python, no
-Ansible). Pipeline: `validate_inputs → get_avd_facts (fabric-wide) →
-get_device_structured_config (per device) → …`.
-
-## Milestone 1 — engine fidelity (done)
-
-Before wrapping pyavd in Crossplane, prove the pyavd path reproduces AVD's own
-output. The harness:
-
-1. reads an AVD Ansible example (`inventory.yml` + `group_vars/`),
-2. rebuilds `all_inputs` (`{hostname: hostvars}`) exactly as Ansible would —
-   per-host group-vars merge in Ansible precedence order, `ansible_*` transport
-   vars stripped,
-3. runs the pyavd pipeline,
-4. deep-diffs the result against the example's checked-in
-   `intended/structured_configs/*.yml`.
+Needs `docker`, `kind`, `kubectl`, `helm`, the `crossplane` CLI, and
+[`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-uv run avd-verify                        # single-dc-l3ls  → 8/8 devices match
-uv run avd-verify avd/ansible_collections/arista/avd/examples/dual-dc-l3ls
-                                         # dual-dc-l3ls    → 16/16 devices match
+scripts/kind-up.sh          # registry + kind + Crossplane + the function + XRDs
+kubectl --context kind-avd apply -f examples/fabric/single-dc-l3ls.yaml
+kubectl --context kind-avd -n default get fabric,device
 ```
 
-**7 of the 9 bundled examples reproduce golden structured config with zero
-diffs** (67 devices total), across both group_vars layouts (per-group
-directories and flat files), explicit and implicit `all` inventories:
-
-| Example | Devices | Result |
-|---------|--------:|--------|
-| single-dc-l3ls | 8 | ✅ 0 diffs |
-| single-dc-l3ls-ipv6 | 8 | ✅ 0 diffs |
-| single-dc-multipod-l3ls | 10 | ✅ 0 diffs |
-| dual-dc-l3ls | 16 | ✅ 0 diffs |
-| campus-fabric | 10 | ✅ 0 diffs |
-| l2ls-fabric | 6 | ✅ 0 diffs |
-| isis-ldp-ipvpn | 9 | ✅ 0 diffs |
-| cv-pathfinder | 17 | ⏸ deferred — SD-WAN design uses `default_node_types` + ansible-vault secrets |
-| common | — | shared vars only, not a runnable fabric |
-
-The intermediate `all_inputs` shape is effectively the schema of the future
-`Fabric` XR `spec`.
-
-## Milestone 2 — Fabric XRD (in progress)
-
-The `Fabric` custom resource is the input object of the living model. API group
-`avd.netclab.dev`, kind `Fabric`, `v1alpha1`, Crossplane v2 (namespaced).
-
-**One `Fabric` == one AVD fabric** (a single `fabric_name`). AVD facts are
-fabric-wide, so the fabric is the reconcile unit; a composite function expands
-one `Fabric` into per-device structured configs. Multi-DC topologies are still
-one fabric when they share a `fabric_name` (DCs stitched via `evpn_gateway`).
-
-`spec.design` carries a fabric-wide AVD eos_designs document (structurally open,
-validated by pyavd); device roles resolve inside it via `default_node_types`.
-This mapping is proven: `spec.design` → `engine.render_fabric_design` reproduces
-golden structured config with **zero diffs** for **6 of 8** bundled examples,
-including the multi-DC and multipod fabrics:
+One `Fabric` fans out to 8 `Device`s, each composing a ConfigMap that holds its AVD
+structured config and rendered `eos.cfg`:
 
 ```bash
-uv run avd-verify-xr   # fold every example → render → diff golden
-#   ok: single-dc-l3ls, single-dc-l3ls-ipv6, l2ls-fabric, isis-ldp-ipvpn,
-#       dual-dc-l3ls (16 dev), single-dc-multipod-l3ls (10 dev)
+kubectl --context kind-avd -n default get cm -l avd.netclab.dev/device
+kubectl --context kind-avd -n default get cm -l avd.netclab.dev/device=dc1-leaf1a \
+  -o jsonpath='{.items[0].data.eos\.cfg}'
 ```
 
-The Ansible→XR fold (`avd_live_model.xr`) unions each DC's node-type blocks and
-**pushes per-DC/per-pod `defaults` down to node_groups/nodes** (which override
-defaults in AVD), so multi-DC fabrics collapse losslessly into one document.
+To see the model actually live, patch a spine's `bgp_as` under `spec.design` — the
+change reaches that spine *and* its leaves' BGP neighbours, because the pipeline
+recomputes fabric-wide facts. `scripts/kind-down.sh` tears it all down.
 
-Two examples don't fold and are deferred, for understood reasons:
-
-- **campus-fabric** — leaves carry RADIUS in `aaa_settings`, spines don't; a
-  fabric-global key that genuinely differs by role (no node-scoped equivalent).
-- **cv-pathfinder** — SD-WAN multi-site (WAN gateway across 2 routers) plus
-  ansible-vault secrets.
-
-Fixtures for the 6 folding examples live in `examples/fabric/*.yaml`.
-
-### Composite function (Milestone 2b — working)
-
-`avd_live_model.composite_fn` is a Crossplane **Python composite function**
-(function-sdk-python) that reconciles one `Fabric` into the living model: it runs
-`render_fabric_design` and emits **one ConfigMap per device** holding its AVD
-structured config, and reports discovered devices on `status`.
+**No cluster?** The engine and the function both run locally:
 
 ```bash
-uv run avd-function --insecure                       # serve on :9443 (dev)
+uv run avd-verify           # pyavd vs AVD's own golden structured configs
+uv run avd-verify-xr        # same, through the Fabric-XR fold
 crossplane render examples/fabric/single-dc-l3ls.yaml \
   apis/fabric/composition.yaml apis/function/function-render.yaml
 ```
 
-Proven end-to-end through `crossplane render`: the rendered ConfigMaps match
-AVD golden structured config with **zero diffs** (single-dc 8/8, dual-dc 16/16),
-and the XR `status` reports `deviceCount`, `devices[].nodeType`, and validation.
+## How it works
 
-> **Struct number gotcha:** Crossplane passes resources as protobuf `Struct`,
-> whose only numeric type is `double`, so integers (VLAN ids, ASNs) arrive as
-> floats. `composite_fn._normalize_numbers` coerces whole-number floats back to
-> `int` before handing the design to pyavd.
+Two composite types, served by one function image that dispatches on `kind`:
 
-| Path | Purpose |
-|------|---------|
-| `apis/fabric/composition.yaml` | Composition (`mode: Pipeline`) |
-| `apis/function/function.yaml` | `Function` package install (cluster; registry image) |
-| `apis/function/function-render.yaml` | `Function` ref for local `crossplane render` (Development runtime) |
+**`Fabric`** — one AVD fabric, meaning a single `fabric_name`. `spec.design` carries a
+fabric-wide `eos_designs` document (structurally open, validated by pyavd); device roles
+resolve inside it via `default_node_types`. The function runs the fabric-wide pyavd
+pipeline (`validate_inputs → get_avd_facts → get_device_structured_config`) and composes
+one `Device` per host, carrying that device's config inline in `spec.structuredConfig`.
+Multi-DC topologies are still one fabric when they share a `fabric_name` (DCs stitched
+via `evpn_gateway`).
 
-### On a kind cluster (Milestone 2c — working)
+**`Device`** — validates and renders its own config (`validate_structured_config` +
+`get_device_config`), reports per-device status (`configHash`, `managementAddress`,
+`nodeType`, and `Validated`/`Rendered` conditions), and composes the artifact: a
+ConfigMap with `structured_config.yaml` + `eos.cfg`.
 
-The function is packaged as an xpkg and installed on a real cluster; applying a
-`Fabric` triggers a genuine Crossplane reconcile that materializes the model.
+Why the split? Facts are fabric-wide, so the fabric has to be the reconcile unit — one
+spine's `bgp_as` must reach its peers. But the config push to the device (or CVP)
+attaches *per device*, so a Device has to be a real reconcile unit with its own status,
+not a passive ConfigMap. The e2e test pins exactly that contract: pause the Fabric and
+patch a Device directly, and it still renders on its own; unpause, and the Fabric takes
+the change back. The Device is live, but not authoritative.
 
-```bash
-scripts/kind-up.sh                                   # registry + kind + Crossplane v2 + function + XRD/Composition
-kubectl --context kind-avd apply -f examples/fabric/single-dc-l3ls.yaml
-kubectl --context kind-avd -n default get fabric,cm -l avd.netclab.dev/device
-scripts/kind-down.sh                                 # tear down
-```
+## Status
 
-Verified on kind (Crossplane v2.3.3): two `Fabric` XRs in one namespace reconcile
-to `Synced=True Ready=True`, fanning out to **24 `Device` XRs** → **24 rendered
-ConfigMaps**, all `Ready`, contents matching AVD golden.
+The full path works on a real cluster: applying two `Fabric` XRs in one namespace
+reconciles to `Synced=True Ready=True`, fanning out to 24 `Device`s → 24 ConfigMaps, all
+`Ready`, contents matching AVD golden.
 
-### Two layers: Fabric → Device
+Liveness is fabric-wide, not just local: bumping a spine's `bgp_as` in `spec.design`
+re-renders that spine *and* rewrites `remote-as` on all six leaves that peer with it,
+because the pipeline recomputes AVD facts for the whole fabric. Typically a few seconds
+end to end — though a device whose watch circuit breaker has tripped is throttled and can
+take ~45s (see [Gotchas](#gotchas)).
 
-The model is split into two composite types (one function image serves both,
-dispatching on kind):
+### Engine fidelity
 
-- **`Fabric`** — runs the fabric-wide pyavd pipeline (facts) and composes one
-  **`Device`** per host, with that device's config inline in
-  `spec.structuredConfig`. `Fabric.Ready` aggregates its Devices' readiness.
-- **`Device`** — validates and renders *its own* config
-  (`validate_structured_config` + `get_device_config`), reports per-device
-  status (`Validated`/`Rendered` conditions, `configHash`, `managementAddress`,
-  `nodeType`), and composes the rendered artifact (a ConfigMap with
-  `structured_config.yaml` + `eos.cfg`). The config-push managed resource attaches
-  here in the consumption phase — which is why per-device status lives on Device,
-  not on a flat ConfigMap.
+Before wrapping pyavd in Crossplane, the point was to prove the pyavd path reproduces
+AVD's own output. Each bundled AVD example is rebuilt into `all_inputs` the way Ansible
+would (per-host group_vars merge, in precedence order), run through pyavd, and deep-diffed
+against the example's checked-in `intended/structured_configs`.
 
-**Liveness through both layers** (~2s): patching `Fabric.spec.design` (e.g. a
-spine `bgp_as`) propagates to `Device.spec.structuredConfig`, the Device
-re-renders, `configHash` changes and the rendered ConfigMap updates — and
-fabric-wide facts mean the change also reaches *other* devices' BGP peers.
+| Example | Devices | From Ansible inputs | Folded into one `Fabric` |
+|---------|--------:|:-------------------:|:------------------------:|
+| single-dc-l3ls | 8 | ✅ | ✅ |
+| single-dc-l3ls-ipv6 | 8 | ✅ | ✅ |
+| single-dc-multipod-l3ls | 10 | ✅ | ✅ |
+| dual-dc-l3ls | 16 | ✅ | ✅ |
+| l2ls-fabric | 6 | ✅ | ✅ |
+| isis-ldp-ipvpn | 9 | ✅ | ✅ |
+| campus-fabric | 10 | ✅ | ⏸ deferred |
+| cv-pathfinder | 17 | ⏸ deferred | ⏸ deferred |
 
-Two subtleties the function must get right (both encoded in `composite_fn.py`):
+Zero diffs everywhere it is ticked, across both group_vars layouts (per-group directories
+and flat files) and explicit and implicit `all` inventories. The fold
+(`avd_live_model.xr`) unions each DC's node-type blocks and pushes per-DC/per-pod
+`defaults` down to node_groups/nodes (which override defaults in AVD), so multi-DC
+fabrics collapse losslessly into one document.
 
-- **Idempotency:** never write a value that changes every reconcile (e.g. a
-  timestamp) unconditionally — it causes a perpetual reconcile / watch storm.
-  `lastRenderedTime` is only bumped when `configHash` actually changes.
-- **Readiness propagation:** with function pipelines Crossplane does *not*
-  auto-derive a composed resource's readiness from its `Ready` condition — the
-  Fabric function reads each observed Device's readiness and sets `ready`
-  explicitly, so `Fabric.Ready` reflects real per-device state.
+The two deferrals are understood, not mysterious:
 
-Gotchas encoded in `scripts/kind-up.sh` and the function:
+- **campus-fabric** — leaves carry RADIUS in `aaa_settings`, spines don't: a
+  fabric-global key that genuinely differs by role, with no node-scoped equivalent.
+- **cv-pathfinder** — SD-WAN multi-site (a WAN gateway across 2 routers) plus
+  ansible-vault secrets.
 
-- **Two image pullers, one reference.** The function image must be pulled by the
-  Crossplane pod (cluster network) *and* the node's containerd (node network,
-  which can't resolve cluster DNS). Referencing the registry by its kind-network
-  IP over plain HTTP satisfies both; containerd is told the registry is insecure.
-- **Composed names are XR-scoped**, not `fabric_name`-scoped, so two fabrics with
-  the same `fabric_name`/overlapping hostnames never collide over a ConfigMap.
-- **Non-root runtime.** The image entrypoint runs the installed console script
-  directly (not `uv run`, which needs a writable cache).
-
-| Path | Purpose |
-|------|---------|
-| `apis/device/xrd.yaml`, `apis/device/composition.yaml` | `Device` XRD + Composition (per-device layer) |
-| `Dockerfile`, `package/crossplane.yaml` | Function runtime image + package metadata |
-| `scripts/kind-up.sh`, `scripts/kind-down.sh` | Reproducible cluster bring-up / teardown |
+They live in `verify_xr.DEFERRED` as *strict* expected failures: if one starts folding,
+the suite fails and says to remove it, so a deferral can't quietly rot.
 
 ## Testing
 
 ```bash
-uv run pytest              # offline: engine fidelity, XR fold, Struct gotcha (~7s)
-uv run pytest -m e2e       # live cluster: kind-up.sh + an applied fabric (~2min)
+uv run pytest              # offline: engine fidelity, the XR fold, the Struct gotcha (~7s)
+uv run pytest -m e2e       # live cluster: needs kind-up.sh + an applied fabric (~2min)
 ```
 
 | Path | Covers |
 |------|---------|
-| `tests/test_engine_fidelity.py` | Milestone 1 — 7 examples reproduce golden structured config |
-| `tests/test_xr_fold.py` | Milestone 2 — the Ansible→XR fold, over every discovered example |
+| `tests/test_engine_fidelity.py` | the examples above reproduce golden structured config |
+| `tests/test_xr_fold.py` | the Ansible→XR fold, over every discovered example |
 | `tests/test_normalize_numbers.py` | the protobuf-`Struct` double→int coercion |
-| `tests/test_e2e_device_layer.py` | drift/reclaim + steady-state idempotency, on a real cluster |
+| `tests/test_e2e_device_layer.py` | drift/reclaim + steady-state idempotency, on a cluster |
 
-`.github/workflows/ci.yml` gates every push and PR on the offline suite (it needs
-`submodules: true` — the golden configs the tests diff against live there). The
-e2e job builds the function image and installs Crossplane, so it is
-`workflow_dispatch` only: run it by hand when the function, compositions, or
-XRDs change.
+CI gates every push and PR on the offline suite (with `submodules: true` — the golden
+configs live there). The e2e job builds the function image and installs Crossplane, so it
+is `workflow_dispatch` only.
 
-The two examples that don't fold are declared in `verify_xr.DEFERRED` with their
-reason, and treated as **strict** expected failures: if one starts folding, the
-suite fails and tells you to drop it, so a deferral can't quietly rot. That also
-makes `avd-verify-xr` exit 0 on the documented state, so it can gate CI.
+## Gotchas
 
-**What the e2e test pins** — the contract of the two-layer split, which nothing
-else checks. Pause the `Fabric` (`crossplane.io/paused=true`) so it stops
-propagating, patch `Device.spec.structuredConfig` directly, and the change still
-reaches the rendered ConfigMap: the Device is a *real* reconcile unit, which is
-what lets a config-push managed resource attach there. Unpause, and the Fabric
-rewrites `spec.structuredConfig` on its next pass (~1s) — `configHash` returns to
-the exact baseline. The Device is live, but not authoritative.
+The non-obvious things this repo encodes, each of which cost a debugging session:
 
-> Under a tripped watch circuit breaker (`Responsive=False WatchCircuitOpen`,
-> which Crossplane opens during the initial create burst) a Device reconciles on
-> a throttle, so a *direct* Device patch can take ~15s to render rather than ~1s.
-> The e2e timeouts allow for it.
+- **`Struct` has no integers.** Crossplane passes resources as protobuf `Struct`, whose
+  only numeric type is `double`, so VLAN ids and ASNs arrive as floats and pyavd's schema
+  rejects them. `composite_fn._normalize_numbers` coerces whole-number floats back to
+  `int` (leaving bools and genuine fractionals alone).
+- **Never write a value that changes every reconcile.** An unconditional timestamp causes
+  a perpetual reconcile and a watch storm. `lastRenderedTime` is only bumped when
+  `configHash` actually changes.
+- **Readiness does not propagate by itself.** With function pipelines Crossplane does
+  *not* derive a composed resource's readiness from its `Ready` condition — the Fabric
+  function reads each observed Device's readiness and sets `ready` explicitly, so
+  `Fabric.Ready` reflects real per-device state.
+- **Two image pullers, one reference.** The function image must be pulled by the
+  Crossplane pod (cluster network) *and* the node's containerd (node network, which can't
+  resolve cluster DNS). Referencing the registry by its kind-network IP over plain HTTP
+  satisfies both; containerd is told the registry is insecure.
+- **Composed names are XR-scoped**, not `fabric_name`-scoped, so two fabrics with the same
+  `fabric_name` and overlapping hostnames never collide over a Device or a ConfigMap.
+- **Non-root runtime.** The image entrypoint runs the installed console script directly,
+  not `uv run`, which would need a writable cache under `$HOME`.
+- **A tripped watch circuit breaker throttles reconciles.** After the initial create burst
+  a Device can report `Responsive=False WatchCircuitOpen` ("Too many watch events from
+  ConfigMap/…"); while it does, its re-render is throttled — observed at ~45s, against ~5s
+  for the same change on an unthrottled device. Nothing is wrong: at rest the model is
+  idempotent and rewrites nothing. But it does mean a re-render that "didn't happen" has
+  usually just not happened *yet*, and the e2e timeouts allow for it.
 
 ## Layout
 
 | Path | Purpose |
 |------|---------|
-| `src/avd_live_model/ansible_inputs.py` | Reconstruct `all_inputs` from an Ansible example (inventory + group_vars merge) |
-| `src/avd_live_model/engine.py` | pyavd pipeline wrapper; `render_fabric_design` = composite-function core |
-| `src/avd_live_model/xr.py` | Fold an Ansible example into a `Fabric` XR document (block union + defaults push-down) |
-| `src/avd_live_model/verify_example.py` | Milestone 1 golden-diff harness (`avd-verify`) |
-| `src/avd_live_model/verify_xr.py` | Milestone 2 Fabric-XR fold + golden-diff harness (`avd-verify-xr`) |
-| `src/avd_live_model/composite_fn.py` | Crossplane Python composite function (`avd-function`) |
-| `apis/fabric/xrd.yaml` | `Fabric` CompositeResourceDefinition |
-| `apis/fabric/composition.yaml` | Fabric Composition (Pipeline) |
-| `apis/function/` | shared `Function` manifests (install + render) |
-| `examples/fabric/` | Example `Fabric` XRs (reproduce golden) |
+| `src/avd_live_model/engine.py` | pyavd pipeline wrapper; `render_fabric_design` is the function's core |
+| `src/avd_live_model/composite_fn.py` | the Crossplane composite function (`avd-function`) |
+| `src/avd_live_model/xr.py` | fold an Ansible example into a `Fabric` document (block union + defaults push-down) |
+| `src/avd_live_model/ansible_inputs.py` | rebuild `all_inputs` from an Ansible example (inventory + group_vars merge) |
+| `src/avd_live_model/verify_example.py`, `verify_xr.py` | golden-diff harnesses (`avd-verify`, `avd-verify-xr`) |
+| `apis/fabric/`, `apis/device/` | XRD + Composition for each layer |
+| `apis/function/` | `Function` manifests (cluster install, and local `crossplane render`) |
+| `examples/fabric/` | example `Fabric` XRs (each reproduces golden) |
+| `Dockerfile`, `package/crossplane.yaml` | function runtime image + package metadata |
+| `scripts/kind-up.sh`, `kind-down.sh` | reproducible cluster bring-up / teardown |
 | `avd/` | AVD v6.3.0 submodule (read-only) |
 
-## Tooling
+Versions are pinned deliberately: `pyavd` matches the `avd` submodule tag, because the
+golden configs come from the submodule — the two only ever move together, which is why
+Renovate leaves both alone (`renovate.json`).
 
-`uv` for everything (`uv add`, `uv run`). The AVD submodule is never modified;
-`pyavd==6.3.0` (matching the pin) comes from PyPI.
+## License
+
+Apache-2.0. Builds on [Arista AVD](https://github.com/aristanetworks/avd), also
+Apache-2.0; the example fabrics are folded from AVD's own published examples.

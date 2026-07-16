@@ -16,6 +16,10 @@ REG=kind-registry
 REG_PORT=5001
 IMG=function-avd-runtime
 TAG=${TAG:-v0.0.7}
+# Pinned: an unpinned chart silently moves the cluster's Crossplane version, so
+# e2e would test a different server than the one a result was recorded against.
+# The CLI (v2.4.0) runs ahead of the chart; that skew is normal and fine.
+XP_CHART=${XP_CHART:-2.3.3}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
@@ -53,10 +57,10 @@ docker build --provenance=false -t "${IMG}:${TAG}" .
 crossplane xpkg build --package-root=package --embed-runtime-image="${IMG}:${TAG}" -o "function-avd-${TAG}.xpkg"
 crossplane xpkg push -f "function-avd-${TAG}.xpkg" "localhost:${REG_PORT}/netclab/function-avd:${TAG}"
 
-echo ">> install Crossplane v2"
+echo ">> install Crossplane (chart ${XP_CHART})"
 helm repo add crossplane-stable https://charts.crossplane.io/stable >/dev/null 2>&1 || true
 helm repo update crossplane-stable >/dev/null
-helm upgrade --install crossplane crossplane-stable/crossplane \
+helm upgrade --install crossplane crossplane-stable/crossplane --version "${XP_CHART}" \
   --namespace crossplane-system --create-namespace --wait --timeout 5m >/dev/null
 
 echo ">> install Function (referenced by kind-network IP so both pullers reach it)"
