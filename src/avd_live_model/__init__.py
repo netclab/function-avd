@@ -1,8 +1,8 @@
-"""avd-live-model: a living AVD supermodel driven by Crossplane XRs.
+"""netclab-avd: a living AVD supermodel driven by Crossplane XRs.
 
-Milestone 1 exposes the pyavd pipeline fed from AVD Ansible examples, so we can
-prove the engine reproduces AVD's golden structured configs before wrapping it
-in a Crossplane Python composite function.
+Exposes the pyavd pipeline fed from AVD Ansible examples, which proves the
+engine reproduces AVD's golden structured configs -- the same engine the
+Crossplane composite function (`composite_fn`) wraps.
 """
 
 from .ansible_inputs import build_all_inputs

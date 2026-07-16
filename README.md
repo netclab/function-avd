@@ -1,6 +1,10 @@
-# avd-live-model
+# netclab-avd
+
+[![CI](https://github.com/netclab/netclab-avd/actions/workflows/ci.yml/badge.svg)](https://github.com/netclab/netclab-avd/actions/workflows/ci.yml)
 
 A **living AVD supermodel** driven by Crossplane XRs on Kubernetes.
+
+> The distribution is `netclab-avd`; the import package is `avd_live_model`.
 
 Builds on [Arista AVD](https://github.com/aristanetworks/avd) v6.3.0, pinned as a
 git submodule under `avd/` (read-only reference).

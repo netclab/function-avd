@@ -1,7 +1,7 @@
 [project]
-name = "avd-live-model"
+name = "netclab-avd"
 version = "0.1.0"
-description = "Living AVD model driven by Crossplane XRs (Milestone 1: pyavd golden-diff harness)"
+description = "Living AVD model driven by Crossplane XRs (Fabric -> Device composite function)"
 readme = "README.md"
 authors = [
     { name = "mbakalarski", email = "64490638+mbakalarski@users.noreply.github.com" }
@@ -30,3 +30,9 @@ markers = ["e2e: requires a cluster from scripts/kind-up.sh with a fabric applie
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# The distribution is named for the repo (netclab-avd); the import package kept
+# its own name. Without this the backend would derive `netclab_avd` from the
+# project name and fail to find the module.
+module-name = "avd_live_model"
