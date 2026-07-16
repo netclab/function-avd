@@ -35,11 +35,11 @@ HOSTNAME = "dc1-leaf1a"
 DRIFT_NTP = "drift.pool.ntp.org"
 GOLDEN_NTP = "0.pool.ntp.org"
 
-# Crossplane polls on a 60s interval by default, and a reclaim can wait on it
-# twice over (the Fabric noticing the unpause, then the Device re-rendering).
-# Measured on kind: 2s for the drift, 1s-60s for the reclaim, and over 120s once
-# -- so a 120s budget was a coin flip, not a limit. Five intervals of headroom:
-# this only costs time when something is genuinely broken.
+# Crossplane polls on a 60s interval by default, and a reclaim waits on it twice
+# over (the Fabric noticing the unpause, then the Device re-rendering). Measured
+# on a fresh kind cluster: drift 2-41s, reclaim 127.5s -- i.e. ~2 poll intervals
+# plus overhead, and past the 120s this used to allow. Five intervals of budget;
+# it only costs time when something is genuinely broken.
 TIMEOUT = 300
 
 # `Ready=True` means the last reconcile succeeded -- not that the create burst
@@ -91,21 +91,36 @@ def _synced_reason() -> str:
     )
 
 
+def _report(what: str, started: float, budget: int) -> None:
+    """Report how long a wait took, against the budget it had.
+
+    A timeout tells you which wait blew its budget, but nothing about how close
+    the others came -- so a run that passes in 287s looks identical whether every
+    phase had room to spare or one of them nearly missed. pytest shows this on
+    failure, and streams it live under `-s` (which is how CI runs e2e).
+    """
+    print(f"    [phase] {what}: {time.monotonic() - started:.1f}s of {budget}s budget")
+
+
 def _wait_for_hash(device: str, want: Callable[[str], bool], what: str) -> str:
-    deadline = time.monotonic() + TIMEOUT
+    started = time.monotonic()
+    deadline = started + TIMEOUT
     seen = None
     while time.monotonic() < deadline:
         seen = _status(device).get("configHash")
         if want(seen):
+            _report(what, started, TIMEOUT)
             return seen
         time.sleep(2)
     pytest.fail(f"timed out after {TIMEOUT}s waiting for {what} (configHash={seen})")
 
 
 def _wait_for(want: Callable[[], bool], what: str) -> None:
-    deadline = time.monotonic() + TIMEOUT
+    started = time.monotonic()
+    deadline = started + TIMEOUT
     while time.monotonic() < deadline:
         if want():
+            _report(what, started, TIMEOUT)
             return
         time.sleep(2)
     pytest.fail(f"timed out after {TIMEOUT}s waiting for {what}")
@@ -119,13 +134,16 @@ def _wait_until_quiesced(configmap: str) -> str:
     real perpetual-reconcile signal, as opposed to the settling churn that a
     fresh cluster produces for a while after `Ready=True`.
     """
-    deadline = time.monotonic() + SETTLE_TIMEOUT
+    started = time.monotonic()
+    deadline = started + SETTLE_TIMEOUT
     rv, quiet_since = None, 0.0
     while time.monotonic() < deadline:
         seen = _cm_rv(configmap)
         if seen != rv:
             rv, quiet_since = seen, time.monotonic()
         elif time.monotonic() - quiet_since >= QUIET_FOR:
+            # Includes the QUIET_FOR window itself, so the floor is ~15s.
+            _report("cluster to go quiet", started, SETTLE_TIMEOUT)
             return rv
         time.sleep(2)
     pytest.fail(
