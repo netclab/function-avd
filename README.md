@@ -79,10 +79,10 @@ reconciles to `Synced=True Ready=True`, fanning out to 24 `Device`s → 24 Confi
 `Ready`, contents matching AVD golden.
 
 Liveness is fabric-wide, not just local: bumping a spine's `bgp_as` in `spec.design`
-re-renders that spine *and* rewrites `remote-as` on all six leaves that peer with it,
-because the pipeline recomputes AVD facts for the whole fabric. Typically a few seconds
-end to end — though a device whose watch circuit breaker has tripped is throttled and can
-take ~45s (see [Gotchas](#gotchas)).
+re-renders that spine *and* rewrites `remote-as` on each of the four L3 leaves that peer
+with it, because the pipeline recomputes AVD facts for the whole fabric. What paces this
+is Crossplane's poll interval, not the render — measured on kind, the touched spine went
+in ~5s and its leaves within ~45s (see [Gotchas](#gotchas)).
 
 ### Engine fidelity
 
@@ -159,12 +159,17 @@ The non-obvious things this repo encodes, each of which cost a debugging session
   `fabric_name` and overlapping hostnames never collide over a Device or a ConfigMap.
 - **Non-root runtime.** The image entrypoint runs the installed console script directly,
   not `uv run`, which would need a writable cache under `$HOME`.
-- **A tripped watch circuit breaker throttles reconciles.** After the initial create burst
-  a Device can report `Responsive=False WatchCircuitOpen` ("Too many watch events from
-  ConfigMap/…"); while it does, its re-render is throttled — observed at ~45s, against ~5s
-  for the same change on an unthrottled device. Nothing is wrong: at rest the model is
-  idempotent and rewrites nothing. But it does mean a re-render that "didn't happen" has
-  usually just not happened *yet*, and the e2e timeouts allow for it.
+- **Propagation waits on the poll interval, not on the render.** Crossplane polls every
+  60s by default, so a change that doesn't raise a prompt watch event just sits until the
+  next pass. Measured on a fresh kind cluster: a direct `Device` patch renders in 2-41s,
+  while the Fabric reclaiming that drift takes ~127s — roughly two chained intervals,
+  since the Fabric has to notice first and the Device re-render after. A re-render that
+  "didn't happen" has usually just not happened *yet*; the e2e budgets allow for it.
+- **`Responsive=False WatchCircuitOpen` looks like the culprit and isn't.** Devices report
+  it ("Too many watch events from ConfigMap/…") for long stretches after the create burst,
+  right next to every slow re-render — but with the breaker open, a direct Device patch
+  still rendered in 2s. Blaming it costs you an afternoon; the poll interval above is the
+  real pacing. At rest the model is idempotent and rewrites nothing regardless.
 
 ## Layout
 

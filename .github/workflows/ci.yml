@@ -83,7 +83,9 @@ jobs:
           kubectl --context kind-avd -n default wait --for=condition=Ready \
             fabric/single-dc-l3ls --timeout=300s
 
-      - run: uv run pytest -m e2e -v
+      # -s: let the [phase] timings through. pytest swallows stdout on a pass,
+      # which is exactly the run where you want to see how much headroom is left.
+      - run: uv run pytest -m e2e -v -s
 
       - name: Dump state on failure
         if: failure()
