@@ -1,0 +1,19 @@
+# Function reference for LOCAL `crossplane render` only (not for the cluster).
+#
+# The Development runtime tells `crossplane render` to connect to a function
+# already running locally instead of pulling/running a container:
+#
+#   uv run avd-function --insecure --debug        # serves on :9443
+#   crossplane render examples/fabric/single-dc-l3ls.yaml \
+#     apis/fabric/composition.yaml apis/function/function-render.yaml
+#
+# For the real cluster install use apis/function/function.yaml instead (it
+# references the packaged image in the registry).
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-avd
+  annotations:
+    render.crossplane.io/runtime: Development
+spec:
+  package: xpkg.crossplane.io/netclab/function-avd:v0.0.0  # ignored in Development runtime

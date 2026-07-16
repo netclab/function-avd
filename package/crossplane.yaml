@@ -1,0 +1,10 @@
+# Function package metadata (the xpkg's "meta" layer). The runtime image is
+# embedded at build time via `crossplane xpkg build --embed-runtime-image`.
+apiVersion: meta.pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-avd
+  annotations:
+    meta.crossplane.io/maintainer: netclab.dev
+    meta.crossplane.io/description: >-
+      Expands an avd.netclab.dev Fabric into per-device AVD structured configs.

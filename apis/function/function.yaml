@@ -1,0 +1,9 @@
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-avd
+spec:
+  # Registry reachable by BOTH the Crossplane pod and the node's containerd
+  # (kind-network IP of the in-cluster registry; served over plain HTTP).
+  package: 172.18.0.3:5000/netclab/function-avd:v0.0.7
+  packagePullPolicy: IfNotPresent

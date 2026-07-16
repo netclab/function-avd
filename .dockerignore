@@ -1,0 +1,12 @@
+# The AVD submodule is huge and NOT needed at runtime (pyavd comes from PyPI);
+# it is only a reference for examples/golden during development.
+avd/
+.git/
+.venv/
+examples/
+apis/
+package/
+**/__pycache__/
+*.xpkg
+Dockerfile
+.dockerignore

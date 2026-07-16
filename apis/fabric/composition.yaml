@@ -1,0 +1,15 @@
+# Composition binding the Fabric XR to the AVD composite function.
+# Pipeline mode is the only mode Crossplane v2 (and `crossplane render`) supports.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: fabric-avd
+spec:
+  compositeTypeRef:
+    apiVersion: avd.netclab.dev/v1alpha1
+    kind: Fabric
+  mode: Pipeline
+  pipeline:
+    - step: render-avd
+      functionRef:
+        name: function-avd

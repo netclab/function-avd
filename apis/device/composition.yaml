@@ -1,0 +1,17 @@
+# Composition for a Device: validate + render its structured config and emit the
+# rendered artifact (ConfigMap). The config-push managed resource is added here
+# in the consumption phase. Uses the same function image as Fabric (it dispatches
+# on the composite kind).
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: device-avd
+spec:
+  compositeTypeRef:
+    apiVersion: avd.netclab.dev/v1alpha1
+    kind: Device
+  mode: Pipeline
+  pipeline:
+    - step: render-device
+      functionRef:
+        name: function-avd

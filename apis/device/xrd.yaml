@@ -1,0 +1,79 @@
+# CompositeResourceDefinition for a single network device.
+#
+# A Device is the per-device realization unit: the Fabric composite function
+# emits one Device per host, carrying that device's AVD structured config inline
+# (spec.structuredConfig). The Device's own composition validates and renders it,
+# reports per-device status, and (in the consumption phase) composes a managed
+# resource that pushes the config to the device / CVP.
+#
+# Splitting Device out of Fabric gives per-device status + lifecycle that a flat
+# ConfigMap cannot: each Device reconciles independently and Fabric readiness
+# aggregates from its Devices.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: devices.avd.netclab.dev
+spec:
+  scope: Namespaced
+  group: avd.netclab.dev
+  names:
+    kind: Device
+    plural: devices
+  # Devices are composed by the Fabric function without an explicit composition
+  # selector; pin the default so selection is deterministic.
+  defaultCompositionRef:
+    name: device-avd
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                hostname:
+                  type: string
+                  description: Device hostname (identity within the fabric).
+                  minLength: 1
+                fabricName:
+                  type: string
+                  description: AVD fabric_name this device belongs to.
+                nodeType:
+                  type: string
+                  description: AVD node type (spine, l3leaf, l2leaf, ...).
+                structuredConfig:
+                  type: object
+                  description: >-
+                    This device's AVD structured config (eos_cli_config_gen
+                    input). Rendered/validated by pyavd in the Device function.
+                  x-kubernetes-preserve-unknown-fields: true
+              required:
+                - hostname
+                - structuredConfig
+            status:
+              type: object
+              properties:
+                observedGeneration:
+                  type: integer
+                  description: spec.generation last processed by the Device function.
+                nodeType:
+                  type: string
+                configHash:
+                  type: string
+                  description: Hash of the rendered EOS CLI; change/drift signal.
+                managementAddress:
+                  type: string
+                  description: Management IP extracted from the structured config.
+                renderedBytes:
+                  type: integer
+                  description: Size of the rendered EOS CLI.
+                lastRenderedTime:
+                  type: string
+                lastDeployedTime:
+                  type: string
+              # Deployed / InSync / anta results attach here in the consumption
+              # phase; keep open so the schema need not churn for each addition.
+              x-kubernetes-preserve-unknown-fields: true
