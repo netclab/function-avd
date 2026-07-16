@@ -61,7 +61,10 @@ jobs:
           curl -sSLo ./kind https://kind.sigs.k8s.io/dl/v0.31.0/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
-          curl -sSL https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh | sh
+          # XP_VERSION pins the CLI: install.sh otherwise takes whatever is
+          # current, so this job would drift onto a different CLI with no commit.
+          curl -sSL https://raw.githubusercontent.com/crossplane/crossplane/main/install.sh \
+            | XP_VERSION=v2.4.0 sh
           sudo mv ./crossplane /usr/local/bin/crossplane
           # kind-up.sh needs helm; the runner image ships it, but don't rely on that.
           command -v helm >/dev/null || \

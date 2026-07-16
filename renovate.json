@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "description": "pyavd is pinned to the version of the avd submodule (v6.3.0): the golden structured configs the tests diff against come from that submodule, so bumping either one alone turns the suite red. Upgrading AVD means moving both together and reviewing the golden diff by hand.",
+      "matchPackageNames": ["pyavd"],
+      "enabled": false
+    }
+  ],
+  "git-submodules": {
+    "description": "Same coupling as pyavd, from the other side: the avd submodule carries the golden configs. Kept off explicitly rather than by default, so enabling it stays a deliberate act.",
+    "enabled": false
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "kind version pinned in the e2e job's install step",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": [
+        "kind\\.sigs\\.k8s\\.io/dl/(?<currentValue>v[0-9.]+)/kind-linux-amd64"
+      ],
+      "depNameTemplate": "kubernetes-sigs/kind",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "crossplane CLI version passed to install.sh via XP_VERSION",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["XP_VERSION=(?<currentValue>v[0-9.]+)"],
+      "depNameTemplate": "crossplane/crossplane",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "crossplane helm chart version installed by kind-up.sh",
+      "managerFilePatterns": ["/^scripts/kind-up\\.sh$/"],
+      "matchStrings": ["XP_CHART:-(?<currentValue>[0-9.]+)\\}"],
+      "depNameTemplate": "crossplane",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://charts.crossplane.io/stable"
+    }
+  ]
+}
