@@ -35,9 +35,18 @@ HOSTNAME = "dc1-leaf1a"
 DRIFT_NTP = "drift.pool.ntp.org"
 GOLDEN_NTP = "0.pool.ntp.org"
 
-# Generous: a Device whose watch circuit breaker has tripped reconciles on a
-# throttle rather than immediately, so propagation can take ~15s, not ~1s.
-TIMEOUT = 120
+# Crossplane polls on a 60s interval by default, and a reclaim can wait on it
+# twice over (the Fabric noticing the unpause, then the Device re-rendering).
+# Measured on kind: 2s for the drift, 1s-60s for the reclaim, and over 120s once
+# -- so a 120s budget was a coin flip, not a limit. Five intervals of headroom:
+# this only costs time when something is genuinely broken.
+TIMEOUT = 300
+
+# `Ready=True` means the last reconcile succeeded -- not that the create burst
+# has stopped rewriting ConfigMaps. Both tests measure against a baseline, so
+# both have to start from a cluster that has actually gone quiet, or they race.
+QUIET_FOR = 15          # seconds a ConfigMap must go unwritten to count as settled
+SETTLE_TIMEOUT = 240
 
 
 def _kubectl(*args: str) -> str:
@@ -71,6 +80,17 @@ def _eos_cfg(configmap: str) -> str:
     return _kubectl("get", "cm", configmap, "-o", r"jsonpath={.data.eos\.cfg}")
 
 
+def _cm_rv(configmap: str) -> str:
+    return _kubectl("get", "cm", configmap, "-o", "jsonpath={.metadata.resourceVersion}")
+
+
+def _synced_reason() -> str:
+    return _kubectl(
+        "get", "fabric", FABRIC,
+        "-o", 'jsonpath={.status.conditions[?(@.type=="Synced")].reason}',
+    )
+
+
 def _wait_for_hash(device: str, want: Callable[[str], bool], what: str) -> str:
     deadline = time.monotonic() + TIMEOUT
     seen = None
@@ -80,6 +100,46 @@ def _wait_for_hash(device: str, want: Callable[[str], bool], what: str) -> str:
             return seen
         time.sleep(2)
     pytest.fail(f"timed out after {TIMEOUT}s waiting for {what} (configHash={seen})")
+
+
+def _wait_for(want: Callable[[], bool], what: str) -> None:
+    deadline = time.monotonic() + TIMEOUT
+    while time.monotonic() < deadline:
+        if want():
+            return
+        time.sleep(2)
+    pytest.fail(f"timed out after {TIMEOUT}s waiting for {what}")
+
+
+def _wait_until_quiesced(configmap: str) -> str:
+    """Block until the rendered ConfigMap stops being rewritten; return its rv.
+
+    This is also half of the idempotency assertion: a model that never reaches a
+    fixed point never goes quiet, so this times out and fails -- which is the
+    real perpetual-reconcile signal, as opposed to the settling churn that a
+    fresh cluster produces for a while after `Ready=True`.
+    """
+    deadline = time.monotonic() + SETTLE_TIMEOUT
+    rv, quiet_since = None, 0.0
+    while time.monotonic() < deadline:
+        seen = _cm_rv(configmap)
+        if seen != rv:
+            rv, quiet_since = seen, time.monotonic()
+        elif time.monotonic() - quiet_since >= QUIET_FOR:
+            return rv
+        time.sleep(2)
+    pytest.fail(
+        f"{configmap} never went {QUIET_FOR}s without a write within "
+        f"{SETTLE_TIMEOUT}s -- perpetual reconcile?"
+    )
+
+
+@pytest.fixture
+def settled() -> tuple[str, str]:
+    """A device and its ConfigMap, once the cluster has stopped writing to them."""
+    device, configmap = _one_named("device"), _one_named("cm")
+    _wait_until_quiesced(configmap)
+    return device, configmap
 
 
 @pytest.fixture
@@ -94,17 +154,19 @@ def never_left_paused():
     )
 
 
-def test_device_renders_on_its_own_and_fabric_reclaims_drift(never_left_paused) -> None:
-    device, configmap = _one_named("device"), _one_named("cm")
+def test_device_renders_on_its_own_and_fabric_reclaims_drift(settled, never_left_paused) -> None:
+    device, configmap = settled
 
     baseline = _status(device)
     baseline_hash, baseline_time = baseline["configHash"], baseline["lastRenderedTime"]
     assert GOLDEN_NTP in _eos_cfg(configmap), "fabric is not at its golden config to start"
 
     _kubectl("annotate", "fabric", FABRIC, "crossplane.io/paused=true", "--overwrite")
-    assert "ReconcilePaused" in _kubectl(
-        "get", "fabric", FABRIC,
-        "-o", 'jsonpath={.status.conditions[?(@.type=="Synced")].reason}',
+    # Crossplane needs a moment to notice the annotation. Asserting on the
+    # condition straight after writing it only held on an already-idle cluster.
+    _wait_for(
+        lambda: "ReconcilePaused" in _synced_reason(),
+        "the Fabric to report ReconcilePaused",
     )
 
     # Drift: with nothing propagating from above, patch the Device itself.
@@ -137,23 +199,22 @@ def test_device_renders_on_its_own_and_fabric_reclaims_drift(never_left_paused) 
     assert _status(device)["lastRenderedTime"] != drift_time
 
 
-def test_steady_state_is_idempotent() -> None:
-    """No perpetual reconcile: at rest, nothing may rewrite the rendered config.
+def test_steady_state_is_idempotent(settled) -> None:
+    """No perpetual reconcile: the model reaches a fixed point and stays there.
 
     Guards the rule that `lastRenderedTime` is only bumped when `configHash`
     actually changes -- a status value that moves every pass would spin the
     Device against its ConfigMap forever.
+
+    Reaching the fixed point is asserted by `settled` itself, which fails if the
+    ConfigMap never goes quiet. What is left to check is that it *stays* put.
     """
-    device, configmap = _one_named("device"), _one_named("cm")
+    device, configmap = settled
 
-    before = _status(device)
-    rv_before = _kubectl("get", "cm", configmap, "-o", "jsonpath={.metadata.resourceVersion}")
-
+    before, rv_before = _status(device), _cm_rv(configmap)
     time.sleep(30)
+    after, rv_after = _status(device), _cm_rv(configmap)
 
-    after = _status(device)
-    rv_after = _kubectl("get", "cm", configmap, "-o", "jsonpath={.metadata.resourceVersion}")
-
+    assert rv_after == rv_before, "the rendered ConfigMap is being rewritten at rest"
     assert after["configHash"] == before["configHash"]
     assert after["lastRenderedTime"] == before["lastRenderedTime"]
-    assert rv_after == rv_before, "the rendered ConfigMap is being rewritten at rest"
