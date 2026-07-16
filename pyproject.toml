@@ -17,6 +17,7 @@ dependencies = [
 avd-verify = "avd_live_model.verify_example:main"
 avd-verify-xr = "avd_live_model.verify_xr:main"
 avd-function = "avd_live_model.composite_fn:cli"
+avd-topology = "avd_live_model.netclab_topology:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]

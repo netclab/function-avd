@@ -92,7 +92,7 @@ kubectl --context "$CTX" wait --for=condition=Established xrd/fabrics.avd.netcla
 kubectl --context "$CTX" apply -f apis/fabric/composition.yaml -f apis/device/composition.yaml
 
 if [ "$WITH_NETCLAB" = "1" ]; then
-  echo ">> netclab lab: CNI plugins ${CNI_PLUGINS} + Multus ${MULTUS}"
+  echo ">> netclab-chart prerequisites: CNI plugins ${CNI_PLUGINS} + Multus ${MULTUS}"
   for node in $(kind get nodes --name "$CLUSTER"); do
     docker exec "$node" bash -c "curl -sSL \
       https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS}/cni-plugins-linux-amd64-${CNI_PLUGINS}.tgz \
