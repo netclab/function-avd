@@ -14,18 +14,29 @@ CLUSTER=avd
 CTX="kind-${CLUSTER}"
 REG=kind-registry
 REG_PORT=5001
+# Named volume so the registry's contents outlive the container. kind-down.sh
+# removes the registry with the cluster; without this, every teardown would also
+# throw away the ~900MB cEOS image and make the next bring-up re-import it.
+REG_VOL=${REG_VOL:-kind-registry-data}
 IMG=function-avd-runtime
 TAG=${TAG:-v0.0.7}
 # Pinned: an unpinned chart silently moves the cluster's Crossplane version, so
 # e2e would test a different server than the one a result was recorded against.
 # The CLI (v2.4.0) runs ahead of the chart; that skew is normal and fine.
 XP_CHART=${XP_CHART:-2.3.3}
+# Multi-interface lab nodes (cEOS) need Multus and the bridge/host-device CNI
+# plugins. Opt-in: they add a minute to a bring-up that the offline suite and the
+# Fabric/Device tests never use. `WITH_NETCLAB=1 scripts/kind-up.sh` to get them.
+WITH_NETCLAB=${WITH_NETCLAB:-0}
+CNI_PLUGINS=${CNI_PLUGINS:-v1.9.0}
+MULTUS=${MULTUS:-v4.3.0}   # netclab-chart's README points at master; pinned here
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo ">> local registry"
+echo ">> local registry (data volume: ${REG_VOL})"
 if [ -z "$(docker ps -q -f name="^${REG}$")" ]; then
-  docker run -d --restart=always -p "127.0.0.1:${REG_PORT}:5000" --name "$REG" registry:2 >/dev/null
+  docker run -d --restart=always -p "127.0.0.1:${REG_PORT}:5000" \
+    -v "${REG_VOL}:/var/lib/registry" --name "$REG" registry:2 >/dev/null
 fi
 
 echo ">> kind cluster"
@@ -79,6 +90,21 @@ echo ">> install XRDs + Compositions (Fabric + Device)"
 kubectl --context "$CTX" apply -f apis/fabric/xrd.yaml -f apis/device/xrd.yaml
 kubectl --context "$CTX" wait --for=condition=Established xrd/fabrics.avd.netclab.dev xrd/devices.avd.netclab.dev --timeout=60s
 kubectl --context "$CTX" apply -f apis/fabric/composition.yaml -f apis/device/composition.yaml
+
+if [ "$WITH_NETCLAB" = "1" ]; then
+  echo ">> netclab lab: CNI plugins ${CNI_PLUGINS} + Multus ${MULTUS}"
+  for node in $(kind get nodes --name "$CLUSTER"); do
+    docker exec "$node" bash -c "curl -sSL \
+      https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS}/cni-plugins-linux-amd64-${CNI_PLUGINS}.tgz \
+      | tar -xz -C /opt/cni/bin ./bridge ./host-device"
+  done
+  kubectl --context "$CTX" apply -f \
+    "https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/${MULTUS}/deployments/multus-daemonset.yml"
+  kubectl --context "$CTX" -n kube-system wait --for=jsonpath='{.status.numberReady}'=1 \
+    --timeout=5m daemonset.apps/kube-multus-ds
+  helm repo add netclab https://netclab.github.io/netclab-chart >/dev/null 2>&1 || true
+  helm repo update netclab >/dev/null
+fi
 
 echo
 echo "Ready. Apply a fabric, e.g.:"
