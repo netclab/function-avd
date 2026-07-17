@@ -165,6 +165,17 @@ The non-obvious things this repo encodes, each of which cost a debugging session
   while the Fabric reclaiming that drift takes ~127s — roughly two chained intervals,
   since the Fabric has to notice first and the Device re-render after. A re-render that
   "didn't happen" has usually just not happened *yet*; the e2e budgets allow for it.
+- **A pushed config has to keep its own transport alive.** `configure replace` is a
+  *full* replace, so whatever eAPI the device was reached over is gone unless the pushed
+  config re-states it. AVD renders `management api http-commands / protocol https` bound
+  to the VRF from `mgmt_interface_vrf` (MGMT) — so a lab that bootstraps eAPI on plain
+  HTTP, or reaches the device outside VRF MGMT, loses it on the first successful push.
+  `examples/lab/` binds eAPI to the default VRF for exactly this reason; the netclab
+  chart bootstraps the same https/443 AVD renders, so bootstrap and steady state agree.
+- **`management_eapi` is all-or-nothing.** Absent, it defaults to enabled (https, VRF
+  MGMT) — which is what golden shows. But set *any* of it without `enabled: true` and the
+  block defaults to disabled, rendering no `management_api_http` at all: a config that
+  locks you out of the device it is pushed to.
 - **`Responsive=False WatchCircuitOpen` looks like the culprit and isn't.** Devices report
   it ("Too many watch events from ConfigMap/…") for long stretches after the create burst,
   right next to every slow re-render — but with the breaker open, a direct Device patch
@@ -183,6 +194,7 @@ The non-obvious things this repo encodes, each of which cost a debugging session
 | `apis/fabric/`, `apis/device/` | XRD + Composition for each layer |
 | `apis/function/` | `Function` manifests (cluster install, and local `crossplane render`) |
 | `examples/fabric/` | example `Fabric` XRs (each reproduces golden) |
+| `examples/lab/` | kustomize overlay: the same fabric as run on the netclab lab |
 | `Dockerfile`, `package/crossplane.yaml` | function runtime image + package metadata |
 | `scripts/kind-up.sh`, `kind-down.sh` | reproducible cluster bring-up / teardown |
 | `avd/` | AVD v6.3.0 submodule (read-only) |

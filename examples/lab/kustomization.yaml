@@ -1,0 +1,37 @@
+# The fabric as run on the netclab lab, which has no OOB management network.
+#
+# AVD binds eAPI to the VRF from `mgmt_interface_vrf` (MGMT), reached on the
+# device's `mgmt_ip` over Management1. A cEOS pod has neither: the chart does
+# not set MGMT_INTF, so Management1 never exists, and management rides the pod
+# network in the default VRF. eAPI in VRF MGMT would listen on a VRF with no
+# interface -- running, unreachable.
+#
+# So the lab, and only the lab, binds eAPI to the default VRF. This is the one
+# thing that genuinely differs from production, where MGMT is correct and the
+# golden config is right as it stands. Everything else -- https, the credentials
+# -- comes from the model unchanged, which is why a pushed config keeps its own
+# transport alive.
+#
+#   kubectl --context kind-avd apply -k examples/lab/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- ../fabric
+
+patches:
+- target:
+    kind: Fabric
+    name: single-dc-l3ls
+  patch: |-
+    - op: add
+      path: /spec/design/management_eapi
+      value:
+        # `enabled` is not optional here. Omit it and the whole block defaults
+        # to disabled, rendering no management_api_http at all -- a config that
+        # locks you out of the device it is pushed to. AVD only defaults it true
+        # when `management_eapi` is absent entirely.
+        enabled: true
+        vrfs:
+        - name: default
+          enabled: true
