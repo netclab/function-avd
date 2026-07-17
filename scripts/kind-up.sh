@@ -30,6 +30,13 @@ XP_CHART=${XP_CHART:-2.3.3}
 WITH_NETCLAB=${WITH_NETCLAB:-0}
 CNI_PLUGINS=${CNI_PLUGINS:-v1.9.0}
 MULTUS=${MULTUS:-v4.3.0}   # netclab-chart's README points at master; pinned here
+# 0.5.9 is a floor, not a preference: it bootstraps cEOS eAPI on https/443, the
+# same transport AVD renders. On 0.5.8 the bootstrap was http/6021, which the
+# first pushed config replaced -- taking eAPI with it.
+NETCLAB_CHART=${NETCLAB_CHART:-0.5.9}
+# The subset of the fabric to actually run. All 8 devices is 16Gi of cEOS; two
+# make a link, and a link is enough to prove the config reached the device.
+LAB_HOSTS=${LAB_HOSTS:-dc1-spine1,dc1-leaf1a}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
@@ -104,9 +111,41 @@ if [ "$WITH_NETCLAB" = "1" ]; then
     --timeout=5m daemonset.apps/kube-multus-ds
   helm repo add netclab https://netclab.github.io/netclab-chart >/dev/null 2>&1 || true
   helm repo update netclab >/dev/null
+
+  # The topology is derived from the lab fabric, not written by hand: AVD resolves
+  # the cabling, so the lab cannot be wired differently from the config it runs.
+  echo ">> lab topology from examples/lab (${LAB_HOSTS})"
+  TOPO="$(mktemp -t netclab-topology.XXXXXX.yaml)"
+  LAB_FABRIC="$(mktemp -t lab-fabric.XXXXXX.yaml)"
+  trap 'rm -f "$TOPO" "$LAB_FABRIC"' EXIT
+  kubectl kustomize examples/lab > "$LAB_FABRIC"
+  uv run avd-topology "$LAB_FABRIC" --hosts "$LAB_HOSTS" > "$TOPO"
+
+  # cEOS cannot be pulled: it is licensed and needs an Arista login. Fail here
+  # with the tag the topology asks for, rather than as an ImagePullBackOff later.
+  CEOS_IMG="$(awk '/image:/ {print $2; exit}' "$TOPO")"
+  CEOS_REPO="${CEOS_IMG#*/}"; CEOS_REPO="${CEOS_REPO%:*}"
+  CEOS_TAG="${CEOS_IMG##*:}"
+  if ! curl -sf "http://localhost:${REG_PORT}/v2/${CEOS_REPO}/tags/list" \
+       | grep -q "\"${CEOS_TAG}\""; then
+    echo "!! ${CEOS_IMG} is not in the local registry."
+    echo "   Import it once (it outlives teardown in the ${REG_VOL} volume):"
+    echo "     docker tag ceos:${CEOS_TAG} ${CEOS_IMG} && docker push ${CEOS_IMG}"
+    exit 1
+  fi
+
+  echo ">> netclab-chart ${NETCLAB_CHART}"
+  helm upgrade --install avd netclab/netclab --version "${NETCLAB_CHART}" \
+    --kube-context "$CTX" -n default -f "$TOPO" >/dev/null
 fi
 
 echo
-echo "Ready. Apply a fabric, e.g.:"
-echo "  kubectl --context ${CTX} apply -f examples/fabric/single-dc-l3ls.yaml"
+if [ "$WITH_NETCLAB" = "1" ]; then
+  echo "Ready. cEOS nodes are up; apply the fabric they run:"
+  echo "  kubectl --context ${CTX} apply -k examples/lab/"
+  echo "  kubectl --context ${CTX} -n default get pods -l vendor=arista"
+else
+  echo "Ready. Apply a fabric, e.g.:"
+  echo "  kubectl --context ${CTX} apply -f examples/fabric/single-dc-l3ls.yaml"
+fi
 echo "  kubectl --context ${CTX} -n default get fabric,cm -l avd.netclab.dev/device"

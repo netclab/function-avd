@@ -55,6 +55,15 @@
       "matchStrings": ["MULTUS:-(?<currentValue>v[0-9.]+)\\}"],
       "depNameTemplate": "k8snetworkplumbingwg/multus-cni",
       "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "netclab-chart version installed by kind-up.sh. 0.5.9 is a floor: earlier charts bootstrap cEOS eAPI on http/6021, which the first pushed config replaces with the https/443 AVD renders -- taking the transport with it.",
+      "managerFilePatterns": ["/^scripts/kind-up\\.sh$/"],
+      "matchStrings": ["NETCLAB_CHART:-(?<currentValue>[0-9.]+)\\}"],
+      "depNameTemplate": "netclab",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://netclab.github.io/netclab-chart"
     }
   ]
 }

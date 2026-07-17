@@ -39,6 +39,25 @@ To see the model actually live, patch a spine's `bgp_as` under `spec.design` —
 change reaches that spine *and* its leaves' BGP neighbours, because the pipeline
 recomputes fabric-wide facts. `scripts/kind-down.sh` tears it all down.
 
+### The lab
+
+`WITH_NETCLAB=1` additionally brings up containerised cEOS nodes, cabled from the fabric
+itself: AVD resolves the peering, so `avd-topology` derives the netclab topology from the
+same model that renders the configs, and the two cannot drift apart.
+
+```bash
+WITH_NETCLAB=1 scripts/kind-up.sh     # + CNI plugins, Multus, netclab-chart, cEOS nodes
+kubectl --context kind-avd apply -k examples/lab/
+```
+
+cEOS is licensed and cannot be pulled — import it once and it outlives teardown in the
+registry's data volume; `kind-up.sh` says how if it is missing. `LAB_HOSTS` picks the
+subset, defaulting to the two that make one link, because all eight is 16Gi of cEOS.
+
+`examples/lab/` is that same fabric with eAPI bound to the default VRF, which is the one
+thing a lab genuinely needs and production does not: AVD binds eAPI to VRF MGMT on
+Management1, and a cEOS pod has neither. Nothing pushes config to these nodes yet.
+
 **No cluster?** The engine and the function both run locally:
 
 ```bash
