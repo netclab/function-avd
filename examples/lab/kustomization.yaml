@@ -35,3 +35,16 @@ patches:
         vrfs:
         - name: default
           enabled: true
+    - op: add
+      path: /spec/push
+      value:
+        # Must match the devices actually running (kind-up.sh LAB_HOSTS): a
+        # push to a Service that does not exist never converges. The endpoint
+        # default fits the netclab chart, which names a Service per node.
+        hosts:
+        - dc1-spine1
+        - dc1-leaf1a
+        # `basic` key = base64 of arista:arista -- created by kind-up.sh. These
+        # credentials survive the first push: the model's `arista` sha512 is
+        # the hash of "arista", same as the chart's bootstrap user.
+        credentialsSecretName: eapi-creds

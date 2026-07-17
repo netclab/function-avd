@@ -56,7 +56,18 @@ subset, defaulting to the two that make one link, because all eight is 16Gi of c
 
 `examples/lab/` is that same fabric with eAPI bound to the default VRF, which is the one
 thing a lab genuinely needs and production does not: AVD binds eAPI to VRF MGMT on
-Management1, and a cEOS pod has neither. Nothing pushes config to these nodes yet.
+Management1, and a cEOS pod has neither. It also sets `spec.push`, so each lab Device
+composes a provider-http `Request` that keeps the box itself in sync over eAPI:
+
+```bash
+kubectl --context kind-avd -n default get requests.http.m.crossplane.io,device
+kubectl --context kind-avd -n default exec dc1-spine1 -- Cli -p 15 -c "show running-config digest"
+```
+
+The Request's OBSERVE reads the device's own `show running-config digest`; a mismatch --
+whether the model changed or someone edited the box by hand -- makes the provider replay
+a full `configure session` + `rollback clean-config` replace. Drift is reclaimed on the
+provider's poll interval, the same rhythm that paces the rest of the model.
 
 **No cluster?** The engine and the function both run locally:
 
@@ -82,7 +93,11 @@ via `evpn_gateway`).
 **`Device`** — validates and renders its own config (`validate_structured_config` +
 `get_device_config`), reports per-device status (`configHash`, `managementAddress`,
 `nodeType`, and `Validated`/`Rendered` conditions), and composes the artifact: a
-ConfigMap with `structured_config.yaml` + `eos.cfg`.
+ConfigMap with `structured_config.yaml` + `eos.cfg`. With `spec.push` set (the Fabric
+propagates it from its own `spec.push`, lab-only today), the Device also composes a
+namespaced provider-http `Request` that pushes `eos.cfg` to the device over eAPI and
+holds it there — `Deployed` condition, `status.push.digest`, and readiness then include
+the box itself, not just the rendered artifact (see `push.py` for the protocol).
 
 Why the split? Facts are fabric-wide, so the fabric has to be the reconcile unit — one
 spine's `bgp_as` must reach its peers. But the config push to the device (or CVP)
@@ -102,6 +117,14 @@ re-renders that spine *and* rewrites `remote-as` on each of the four L3 leaves t
 with it, because the pipeline recomputes AVD facts for the whole fabric. What paces this
 is Crossplane's poll interval, not the render — measured on kind, the touched spine went
 in ~5s and its leaves within ~45s (see [Gotchas](#gotchas)).
+
+The loop closes on the lab: with `spec.push` set, the same `bgp_as` bump reached the
+touched spine's *running config* in ~47s and rewrote `remote-as` on its peering leaf's
+running config in ~63s — and the reverse direction holds too, a `vlan 999` added by hand
+on the box was replaced with the byte-identical golden config (EOS's own
+`show running-config digest` certifying both states) on the next provider poll.
+Deleting a Device orphans the box rather than wiping it: an empty switch is not a
+desired state.
 
 ### Engine fidelity
 
@@ -149,7 +172,9 @@ uv run pytest -m e2e       # live cluster: needs kind-up.sh + an applied fabric 
 | `tests/test_engine_fidelity.py` | the examples above reproduce golden structured config |
 | `tests/test_xr_fold.py` | the Ansible→XR fold, over every discovered example |
 | `tests/test_normalize_numbers.py` | the protobuf-`Struct` double→int coercion |
+| `tests/test_push.py` | the eAPI push Request builders: session contents, digest provenance |
 | `tests/test_e2e_device_layer.py` | drift/reclaim + steady-state idempotency, on a cluster |
+| `tests/test_e2e_push_layer.py` | on-box drift reclaim + at-rest quiet, on the netclab lab (skips without it) |
 
 CI gates every push and PR on the offline suite (with `submodules: true` — the golden
 configs live there). The e2e job builds the function image and installs Crossplane, so it
@@ -191,6 +216,27 @@ The non-obvious things this repo encodes, each of which cost a debugging session
   HTTP, or reaches the device outside VRF MGMT, loses it on the first successful push.
   `examples/lab/` binds eAPI to the default VRF for exactly this reason; the netclab
   chart bootstraps the same https/443 AVD renders, so bootstrap and steady state agree.
+  The same rule holds for *credentials*: the chart bootstraps `arista`/`arista`, and the
+  model's `arista` user carries the sha512 of that very password — one Secret works
+  before and after the first push. Change either side alone and the push locks itself out.
+- **A config session must not have a fixed name.** EOS keeps exactly **one** completed
+  session in history (`show configuration sessions`), so `configure session avd-<hash>`
+  works once — and then every retry of the same revision, which is precisely the
+  drift-reclaim re-push, fails with `already completed`. The push uses an *unnamed*
+  session (the device picks a fresh name each attempt) and carries its revision in the
+  JSON-RPC `id` instead.
+- **eAPI reports failure inside an HTTP 200.** A failed command comes back as a JSON
+  `error` member on a perfectly successful HTTP response, so provider-http counts the
+  push as a success and `Synced` stays `True`. The loop still converges — the next
+  OBSERVE sees the digest mismatch and retries — but the *only* honest failure signal
+  is the Request's `status.response.body`, not its conditions.
+- **Record the golden digest only from a response that proves its revision.** The
+  running-config digest cannot be predicted from `eos.cfg` (EOS canonicalizes), so it is
+  recorded from the device — but the Request's status can lag the spec by a reconcile.
+  A push response is trusted via the revision-scoped JSON-RPC `id` it echoes; an observe
+  response only via the pushed `alias avd_cfg_<hash>` marker, and even then only while
+  no digest is recorded for that revision — otherwise manual drift observed at the wrong
+  moment would be blessed as the new golden state and the model change would never land.
 - **`management_eapi` is all-or-nothing.** Absent, it defaults to enabled (https, VRF
   MGMT) — which is what golden shows. But set *any* of it without `enabled: true` and the
   block defaults to disabled, rendering no `management_api_http` at all: a config that
@@ -207,6 +253,7 @@ The non-obvious things this repo encodes, each of which cost a debugging session
 |------|---------|
 | `src/avd_live_model/engine.py` | pyavd pipeline wrapper; `render_fabric_design` is the function's core |
 | `src/avd_live_model/composite_fn.py` | the Crossplane composite function (`avd-function`) |
+| `src/avd_live_model/push.py` | eAPI push protocol: the provider-http `Request` builders |
 | `src/avd_live_model/xr.py` | fold an Ansible example into a `Fabric` document (block union + defaults push-down) |
 | `src/avd_live_model/ansible_inputs.py` | rebuild `all_inputs` from an Ansible example (inventory + group_vars merge) |
 | `src/avd_live_model/verify_example.py`, `verify_xr.py` | golden-diff harnesses (`avd-verify`, `avd-verify-xr`) |

@@ -19,7 +19,9 @@ REG_PORT=5001
 # throw away the ~900MB cEOS image and make the next bring-up re-import it.
 REG_VOL=${REG_VOL:-kind-registry-data}
 IMG=function-avd-runtime
-TAG=${TAG:-v0.0.7}
+# Bump together with function changes: the registry caches by tag and pull is
+# IfNotPresent, so rebuilding different code under an old tag ships the old image.
+TAG=${TAG:-v0.0.10}
 # Pinned: an unpinned chart silently moves the cluster's Crossplane version, so
 # e2e would test a different server than the one a result was recorded against.
 # The CLI (v2.4.0) runs ahead of the chart; that skew is normal and fine.
@@ -34,6 +36,9 @@ MULTUS=${MULTUS:-v4.3.0}   # netclab-chart's README points at master; pinned her
 # same transport AVD renders. On 0.5.8 the bootstrap was http/6021, which the
 # first pushed config replaced -- taking eAPI with it.
 NETCLAB_CHART=${NETCLAB_CHART:-0.5.9}
+# v1.0.14 is a floor too: the config push composes a *namespaced* Request
+# (http.m.crossplane.io), which older provider-http releases do not serve.
+PROVIDER_HTTP=${PROVIDER_HTTP:-v1.0.14}
 # The subset of the fabric to actually run. All 8 devices is 16Gi of cEOS; two
 # make a link, and a link is enough to prove the config reached the device.
 LAB_HOSTS=${LAB_HOSTS:-dc1-spine1,dc1-leaf1a}
@@ -99,6 +104,42 @@ kubectl --context "$CTX" wait --for=condition=Established xrd/fabrics.avd.netcla
 kubectl --context "$CTX" apply -f apis/fabric/composition.yaml -f apis/device/composition.yaml
 
 if [ "$WITH_NETCLAB" = "1" ]; then
+  echo ">> provider-http ${PROVIDER_HTTP} (config push over eAPI)"
+  kubectl --context "$CTX" apply -f - <<EOF
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-http
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-http:${PROVIDER_HTTP}
+EOF
+  kubectl --context "$CTX" wait --for=condition=Healthy provider.pkg.crossplane.io/provider-http --timeout=300s
+  # The push Requests are namespaced, so they reference a namespaced
+  # ProviderConfig; the Secret token must work before AND after the first push,
+  # which it does because the model's `arista` sha512 is the hash of "arista" --
+  # the same credentials the netclab chart bootstraps.
+  kubectl --context "$CTX" apply -f - <<EOF
+apiVersion: http.m.crossplane.io/v1alpha2
+kind: ProviderConfig
+metadata:
+  name: eapi
+  namespace: default
+spec:
+  # eAPI auth rides in each Request's Authorization header (from the Secret
+  # below); the ProviderConfig itself carries no credentials, but the field
+  # is required, so it must say so explicitly.
+  credentials:
+    source: None
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: eapi-creds
+  namespace: default
+stringData:
+  basic: $(printf 'arista:arista' | base64)
+EOF
+
   echo ">> netclab-chart prerequisites: CNI plugins ${CNI_PLUGINS} + Multus ${MULTUS}"
   for node in $(kind get nodes --name "$CLUSTER"); do
     docker exec "$node" bash -c "curl -sSL \

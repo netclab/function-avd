@@ -50,6 +50,30 @@ spec:
                     This device's AVD structured config (eos_cli_config_gen
                     input). Rendered/validated by pyavd in the Device function.
                   x-kubernetes-preserve-unknown-fields: true
+                push:
+                  type: object
+                  description: >-
+                    Push the rendered config to this device over eAPI (set by
+                    the Fabric function from Fabric spec.push). The Device
+                    composes a provider-http Request: OBSERVE compares the
+                    device's running-config digest, CREATE/UPDATE performs a
+                    full replace in a config session. Absent means render-only.
+                  properties:
+                    url:
+                      type: string
+                      description: eAPI endpoint (https://.../command-api).
+                      minLength: 1
+                    credentialsSecretName:
+                      type: string
+                      description: Secret with the `basic` eAPI auth token.
+                      minLength: 1
+                    providerConfigName:
+                      type: string
+                    insecureSkipTLSVerify:
+                      type: boolean
+                  required:
+                    - url
+                    - credentialsSecretName
               required:
                 - hostname
                 - structuredConfig
@@ -74,6 +98,22 @@ spec:
                   type: string
                 lastDeployedTime:
                   type: string
-              # Deployed / InSync / anta results attach here in the consumption
-              # phase; keep open so the schema need not churn for each addition.
+                push:
+                  type: object
+                  description: >-
+                    Deployment state of the config push. `digest` is EOS's own
+                    hash of the running config recorded right after a push --
+                    the golden value the push Request's OBSERVE compares
+                    against (see push.py).
+                  properties:
+                    configHash:
+                      type: string
+                      description: Rendered-config hash this state refers to.
+                    digest:
+                      type: string
+                      description: running-config digest recorded at deploy.
+                    lastDeployedTime:
+                      type: string
+              # anta results attach here in the consumption phase; keep open
+              # so the schema need not churn for each addition.
               x-kubernetes-preserve-unknown-fields: true
