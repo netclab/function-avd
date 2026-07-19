@@ -8,26 +8,24 @@ One function serves two composite kinds (dispatched on ``kind``):
 * ``Device`` -- validates and renders its own structured config (pyavd
   ``validate_structured_config`` + ``get_device_config``), reports per-device
   status/conditions, and emits a ConfigMap artifact (structured config + EOS
-  CLI). The config push to the device/CVP is a managed resource added later.
+  CLI). With ``spec.push`` set it also composes a provider-http ``Request``
+  that keeps the device's running config in sync over eAPI (see push.py).
 
-Run locally for ``crossplane render``:
-
-    uv run avd-function --insecure --debug     # listens on :9443
+The gRPC entrypoint lives in ``main.py`` (function-template-python layout).
 """
 
 from __future__ import annotations
 
-import argparse
 import hashlib
-import os
 from datetime import datetime, timezone
 
 import pyavd
 import yaml
-from crossplane.function import logging, resource, response, runtime
+from crossplane.function import logging, resource, response
 from crossplane.function.proto.v1 import run_function_pb2 as fnv1
 from crossplane.function.proto.v1 import run_function_pb2_grpc as grpcv1
 
+from . import push
 from .engine import (
     InputValidationError,
     device_roles_from_design,
@@ -35,10 +33,6 @@ from .engine import (
 )
 
 API_VERSION = "avd.netclab.dev/v1alpha1"
-
-# Structured configs are large; raise gRPC message limits well above the 4 MiB
-# default so big fabrics fit in one request/response.
-_MAX_MSG = 64 * 1024 * 1024
 
 
 def _normalize_numbers(obj):
@@ -99,7 +93,7 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
         if kind == "Fabric":
             self._reconcile_fabric(req, rsp, observed)
         elif kind == "Device":
-            self._reconcile_device(rsp, observed)
+            self._reconcile_device(req, rsp, observed)
         else:
             response.fatal(rsp, f"unsupported composite kind: {kind!r}")
         return rsp
@@ -133,6 +127,18 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
             response.fatal(rsp, f"AVD render failed: {type(err).__name__}: {err}")
             return
 
+        push_spec = spec.get("push") or {}
+        if push_spec and not push_spec.get("credentialsSecretName"):
+            response.fatal(rsp, "spec.push.credentialsSecretName is required when push is set")
+            return
+        # Only hosts that actually run somewhere get a push; the lab is a subset
+        # of the fabric (LAB_HOSTS), and a Request against a non-existent Service
+        # would sit Synced=False forever.
+        push_hosts = set(push_spec.get("hosts") or structured_configs)
+        url_template = push_spec.get(
+            "urlTemplate", "https://{hostname}.{namespace}.svc/command-api"
+        )
+
         roles = device_roles_from_design(design)
         observed_devices = req.observed.resources  # keyed by composition-resource-name (hostname)
         devices = []
@@ -160,6 +166,13 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
                     "structuredConfig": structured_config,
                 },
             }
+            if push_spec and hostname in push_hosts:
+                device["spec"]["push"] = {
+                    "url": url_template.format(hostname=hostname, namespace=namespace),
+                    "credentialsSecretName": push_spec["credentialsSecretName"],
+                    "providerConfigName": push_spec.get("providerConfigName", "eapi"),
+                    "insecureSkipTLSVerify": push_spec.get("insecureSkipTLSVerify", True),
+                }
             resource.update(rsp.desired.resources[hostname], device)
             # With function pipelines Crossplane does NOT auto-derive a composed
             # resource's readiness from its Ready condition -- the function must
@@ -184,7 +197,9 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
 
     # -- Device: validate + render one device's config -----------------------
 
-    def _reconcile_device(self, rsp: fnv1.RunFunctionResponse, observed: dict) -> None:
+    def _reconcile_device(
+        self, req: fnv1.RunFunctionRequest, rsp: fnv1.RunFunctionResponse, observed: dict
+    ) -> None:
         spec = observed.get("spec") or {}
         hostname = spec.get("hostname")
         structured_config = spec.get("structuredConfig") or {}
@@ -261,53 +276,92 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
         resource.update(rsp.desired.resources["rendered-config"], configmap)
         rsp.desired.resources["rendered-config"].ready = fnv1.READY_TRUE
 
-        response.set_conditions(
-            rsp,
+        conditions = [
             resource.Condition(typ="Validated", status="True", reason="SchemaValid"),
             resource.Condition(typ="Rendered", status="True", reason="ConfigRendered"),
-        )
-        resource.update_status(
-            rsp.desired.composite,
-            {
-                "observedGeneration": generation,
-                "nodeType": node_type,
-                "configHash": config_hash,
-                "managementAddress": _management_address(structured_config),
-                "renderedBytes": len(eos_cli),
-                "lastRenderedTime": last_rendered,
-            },
-        )
+        ]
+        status = {
+            "observedGeneration": generation,
+            "nodeType": node_type,
+            "configHash": config_hash,
+            "managementAddress": _management_address(structured_config),
+            "renderedBytes": len(eos_cli),
+            "lastRenderedTime": last_rendered,
+        }
+
+        push_spec = spec.get("push") or {}
+        if push_spec:
+            self._reconcile_push(
+                req, rsp, push_spec, prev, configmap["metadata"]["labels"],
+                xr_name=xr_name, namespace=namespace, eos_cli=eos_cli,
+                config_hash=config_hash, conditions=conditions, status=status,
+            )
+
+        response.set_conditions(rsp, *conditions)
+        resource.update_status(rsp.desired.composite, status)
         response.normal(rsp, f"Validated and rendered {hostname} ({len(eos_cli)} bytes)")
 
+    def _reconcile_push(
+        self, req, rsp, push_spec, prev, labels, *,
+        xr_name, namespace, eos_cli, config_hash, conditions, status,
+    ) -> None:
+        """Compose the eAPI push Request and fold its observed state back in.
 
-def cli() -> None:
-    parser = argparse.ArgumentParser(description="AVD composite function (Fabric + Device)")
-    parser.add_argument("--address", default="0.0.0.0:9443", help="listen address")
-    parser.add_argument("--insecure", action="store_true", help="serve without TLS (dev only)")
-    parser.add_argument(
-        "--tls-certs-dir",
-        default=os.getenv("TLS_SERVER_CERTS_DIR"),
-        help="directory with tls.crt/tls.key/ca.crt; Crossplane sets TLS_SERVER_CERTS_DIR in-cluster",
-    )
-    parser.add_argument("--debug", action="store_true", help="verbose logging")
-    args = parser.parse_args()
+        The recorded digest is what OBSERVE compares against. A push response is
+        always authoritative for it; an observe response only fills the bootstrap
+        window (no digest recorded yet for this configHash) -- accepting it later
+        would bless manual drift as the new golden state (see push.py).
+        """
+        prev_push = prev.get("push") or {}
+        recorded = prev_push.get("digest") if prev_push.get("configHash") == config_hash else None
 
-    logging.configure(level=logging.Level.DEBUG if args.debug else logging.Level.INFO)
-    # In-cluster Crossplane mounts TLS certs and points TLS_SERVER_CERTS_DIR at
-    # them -> serve securely. Locally (no certs) fall back to --insecure.
-    creds = runtime.load_credentials(args.tls_certs_dir) if args.tls_certs_dir else None
-    insecure = args.insecure or creds is None
-    runtime.serve(
-        FunctionRunner(),
-        args.address,
-        creds=creds,
-        insecure=insecure,
-        options=[
-            ("grpc.max_receive_message_length", _MAX_MSG),
-            ("grpc.max_send_message_length", _MAX_MSG),
-        ],
-    )
+        observed_request = (req.observed.resources or {}).get("push")
+        if observed_request is not None:
+            found = push.deployed_digest_from_observed(
+                resource.struct_to_dict(observed_request.resource), config_hash
+            )
+            if found is not None:
+                digest, source = found
+                if source == "push" or recorded is None:
+                    recorded = digest
 
+        request = push.request_object(
+            name=resource.child_name(xr_name, "push"),
+            namespace=namespace,
+            labels=labels,
+            url=push_spec["url"],
+            credentials_secret=push_spec["credentialsSecretName"],
+            provider_config=push_spec.get("providerConfigName", "eapi"),
+            insecure_skip_tls_verify=push_spec.get("insecureSkipTLSVerify", True),
+            eos_cli=eos_cli,
+            config_hash=config_hash,
+            deployed_digest=recorded,
+        )
+        resource.update(rsp.desired.resources["push"], request)
 
-if __name__ == "__main__":
-    cli()
+        if recorded:
+            # Same idempotency rule as lastRenderedTime: bump only on change.
+            unchanged = (
+                prev_push.get("configHash") == config_hash and prev_push.get("digest") == recorded
+            )
+            last_deployed = prev_push.get("lastDeployedTime") if unchanged else _now()
+            rsp.desired.resources["push"].ready = fnv1.READY_TRUE
+            conditions.append(
+                resource.Condition(typ="Deployed", status="True", reason="ConfigDeployed")
+            )
+            status["push"] = {
+                "configHash": config_hash,
+                "digest": recorded,
+                "lastDeployedTime": last_deployed,
+            }
+            status["lastDeployedTime"] = last_deployed
+        else:
+            conditions.append(
+                resource.Condition(
+                    typ="Deployed",
+                    status="False",
+                    reason="AwaitingPush",
+                    message="config push not yet confirmed by the device",
+                )
+            )
+            status["push"] = {"configHash": config_hash}

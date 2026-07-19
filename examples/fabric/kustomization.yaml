@@ -1,0 +1,11 @@
+# Base for the lab overlay in ../lab, which is why this lists one fabric and not
+# all six: the lab runs single-dc-l3ls, the same one kind-up.sh points at. The
+# others are applied directly with `kubectl apply -f`.
+#
+# Nothing here patches anything -- every XR in this directory reproduces AVD's
+# golden config, and that property is what makes them worth checking in.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- single-dc-l3ls.yaml

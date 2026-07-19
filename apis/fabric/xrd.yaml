@@ -48,6 +48,44 @@ spec:
                     default_node_types, tenants, connected endpoints, ...).
                     Validated by pyavd; violations reported on status.
                   x-kubernetes-preserve-unknown-fields: true
+                push:
+                  type: object
+                  description: >-
+                    Enable pushing rendered configs to the devices over eAPI.
+                    Each selected Device composes a provider-http Request that
+                    observes the device's config digest and replaces the config
+                    when model or device drifts. Absent means render-only.
+                  properties:
+                    hosts:
+                      type: array
+                      description: >-
+                        Hostnames to push to; defaults to every device. The lab
+                        runs a subset of the fabric (LAB_HOSTS), and a push to
+                        a device that isn't running never converges.
+                      items:
+                        type: string
+                    urlTemplate:
+                      type: string
+                      description: >-
+                        eAPI endpoint per device; {hostname} and {namespace}
+                        are substituted. Defaults to the netclab-chart Service,
+                        https://{hostname}.{namespace}.svc/command-api.
+                    credentialsSecretName:
+                      type: string
+                      description: >-
+                        Secret (same namespace) whose `basic` key holds the
+                        base64 user:password token for eAPI basic auth. The
+                        credentials must stay valid across the first push --
+                        the pushed config replaces the bootstrap users.
+                      minLength: 1
+                    providerConfigName:
+                      type: string
+                      description: provider-http ProviderConfig name (default eapi).
+                    insecureSkipTLSVerify:
+                      type: boolean
+                      description: cEOS serves a self-signed cert; default true.
+                  required:
+                    - credentialsSecretName
               required:
                 - fabricName
                 - design

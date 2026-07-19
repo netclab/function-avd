@@ -14,7 +14,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 # Install dependencies first (cached layer), then the project itself.
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-install-project --no-dev
-COPY src ./src
+COPY function ./function
 RUN uv sync --frozen --no-dev
 
 EXPOSE 9443

@@ -14,18 +14,41 @@ CLUSTER=avd
 CTX="kind-${CLUSTER}"
 REG=kind-registry
 REG_PORT=5001
+# Named volume so the registry's contents outlive the container. kind-down.sh
+# removes the registry with the cluster; without this, every teardown would also
+# throw away the ~900MB cEOS image and make the next bring-up re-import it.
+REG_VOL=${REG_VOL:-kind-registry-data}
 IMG=function-avd-runtime
-TAG=${TAG:-v0.0.7}
+# Bump together with function changes: the registry caches by tag and pull is
+# IfNotPresent, so rebuilding different code under an old tag ships the old image.
+TAG=${TAG:-v0.0.11}
 # Pinned: an unpinned chart silently moves the cluster's Crossplane version, so
 # e2e would test a different server than the one a result was recorded against.
 # The CLI (v2.4.0) runs ahead of the chart; that skew is normal and fine.
 XP_CHART=${XP_CHART:-2.3.3}
+# Multi-interface lab nodes (cEOS) need Multus and the bridge/host-device CNI
+# plugins. Opt-in: they add a minute to a bring-up that the offline suite and the
+# Fabric/Device tests never use. `WITH_NETCLAB=1 scripts/kind-up.sh` to get them.
+WITH_NETCLAB=${WITH_NETCLAB:-0}
+CNI_PLUGINS=${CNI_PLUGINS:-v1.9.0}
+MULTUS=${MULTUS:-v4.3.0}   # netclab-chart's README points at master; pinned here
+# 0.5.9 is a floor, not a preference: it bootstraps cEOS eAPI on https/443, the
+# same transport AVD renders. On 0.5.8 the bootstrap was http/6021, which the
+# first pushed config replaced -- taking eAPI with it.
+NETCLAB_CHART=${NETCLAB_CHART:-0.5.9}
+# v1.0.14 is a floor too: the config push composes a *namespaced* Request
+# (http.m.crossplane.io), which older provider-http releases do not serve.
+PROVIDER_HTTP=${PROVIDER_HTTP:-v1.0.14}
+# The subset of the fabric to actually run. All 8 devices is 16Gi of cEOS; two
+# make a link, and a link is enough to prove the config reached the device.
+LAB_HOSTS=${LAB_HOSTS:-dc1-spine1,dc1-leaf1a}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo ">> local registry"
+echo ">> local registry (data volume: ${REG_VOL})"
 if [ -z "$(docker ps -q -f name="^${REG}$")" ]; then
-  docker run -d --restart=always -p "127.0.0.1:${REG_PORT}:5000" --name "$REG" registry:2 >/dev/null
+  docker run -d --restart=always -p "127.0.0.1:${REG_PORT}:5000" \
+    -v "${REG_VOL}:/var/lib/registry" --name "$REG" registry:2 >/dev/null
 fi
 
 echo ">> kind cluster"
@@ -80,7 +103,90 @@ kubectl --context "$CTX" apply -f apis/fabric/xrd.yaml -f apis/device/xrd.yaml
 kubectl --context "$CTX" wait --for=condition=Established xrd/fabrics.avd.netclab.dev xrd/devices.avd.netclab.dev --timeout=60s
 kubectl --context "$CTX" apply -f apis/fabric/composition.yaml -f apis/device/composition.yaml
 
+if [ "$WITH_NETCLAB" = "1" ]; then
+  echo ">> provider-http ${PROVIDER_HTTP} (config push over eAPI)"
+  kubectl --context "$CTX" apply -f - <<EOF
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-http
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-http:${PROVIDER_HTTP}
+EOF
+  kubectl --context "$CTX" wait --for=condition=Healthy provider.pkg.crossplane.io/provider-http --timeout=300s
+  # The push Requests are namespaced, so they reference a namespaced
+  # ProviderConfig; the Secret token must work before AND after the first push,
+  # which it does because the model's `arista` sha512 is the hash of "arista" --
+  # the same credentials the netclab chart bootstraps.
+  kubectl --context "$CTX" apply -f - <<EOF
+apiVersion: http.m.crossplane.io/v1alpha2
+kind: ProviderConfig
+metadata:
+  name: eapi
+  namespace: default
+spec:
+  # eAPI auth rides in each Request's Authorization header (from the Secret
+  # below); the ProviderConfig itself carries no credentials, but the field
+  # is required, so it must say so explicitly.
+  credentials:
+    source: None
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: eapi-creds
+  namespace: default
+stringData:
+  basic: $(printf 'arista:arista' | base64)
+EOF
+
+  echo ">> netclab-chart prerequisites: CNI plugins ${CNI_PLUGINS} + Multus ${MULTUS}"
+  for node in $(kind get nodes --name "$CLUSTER"); do
+    docker exec "$node" bash -c "curl -sSL \
+      https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS}/cni-plugins-linux-amd64-${CNI_PLUGINS}.tgz \
+      | tar -xz -C /opt/cni/bin ./bridge ./host-device"
+  done
+  kubectl --context "$CTX" apply -f \
+    "https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/${MULTUS}/deployments/multus-daemonset.yml"
+  kubectl --context "$CTX" -n kube-system wait --for=jsonpath='{.status.numberReady}'=1 \
+    --timeout=5m daemonset.apps/kube-multus-ds
+  helm repo add netclab https://netclab.github.io/netclab-chart >/dev/null 2>&1 || true
+  helm repo update netclab >/dev/null
+
+  # The topology is derived from the lab fabric, not written by hand: AVD resolves
+  # the cabling, so the lab cannot be wired differently from the config it runs.
+  echo ">> lab topology from examples/lab (${LAB_HOSTS})"
+  TOPO="$(mktemp -t netclab-topology.XXXXXX.yaml)"
+  LAB_FABRIC="$(mktemp -t lab-fabric.XXXXXX.yaml)"
+  trap 'rm -f "$TOPO" "$LAB_FABRIC"' EXIT
+  kubectl kustomize examples/lab > "$LAB_FABRIC"
+  uv run avd-topology "$LAB_FABRIC" --hosts "$LAB_HOSTS" > "$TOPO"
+
+  # cEOS cannot be pulled: it is licensed and needs an Arista login. Fail here
+  # with the tag the topology asks for, rather than as an ImagePullBackOff later.
+  CEOS_IMG="$(awk '/image:/ {print $2; exit}' "$TOPO")"
+  CEOS_REPO="${CEOS_IMG#*/}"; CEOS_REPO="${CEOS_REPO%:*}"
+  CEOS_TAG="${CEOS_IMG##*:}"
+  if ! curl -sf "http://localhost:${REG_PORT}/v2/${CEOS_REPO}/tags/list" \
+       | grep -q "\"${CEOS_TAG}\""; then
+    echo "!! ${CEOS_IMG} is not in the local registry."
+    echo "   Import it once (it outlives teardown in the ${REG_VOL} volume):"
+    echo "     docker tag ceos:${CEOS_TAG} ${CEOS_IMG} && docker push ${CEOS_IMG}"
+    exit 1
+  fi
+
+  echo ">> netclab-chart ${NETCLAB_CHART}"
+  helm upgrade --install avd netclab/netclab --version "${NETCLAB_CHART}" \
+    --kube-context "$CTX" -n default -f "$TOPO" >/dev/null
+fi
+
 echo
-echo "Ready. Apply a fabric, e.g.:"
-echo "  kubectl --context ${CTX} apply -f examples/fabric/single-dc-l3ls.yaml"
+if [ "$WITH_NETCLAB" = "1" ]; then
+  echo "Ready. cEOS nodes are up; apply the fabric they run:"
+  echo "  kubectl --context ${CTX} apply -k examples/lab/"
+  echo "  kubectl --context ${CTX} -n default get pods -l vendor=arista"
+else
+  echo "Ready. Apply a fabric, e.g.:"
+  echo "  kubectl --context ${CTX} apply -f examples/fabric/single-dc-l3ls.yaml"
+fi
 echo "  kubectl --context ${CTX} -n default get fabric,cm -l avd.netclab.dev/device"

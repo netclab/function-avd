@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from avd_live_model.verify_xr import DEFERRED, EXAMPLES_ROOT, _discover, verify_one
+from function.verify_xr import DEFERRED, EXAMPLES_ROOT, _discover, verify_one
 
 
 @pytest.mark.parametrize("example_dir", _discover(EXAMPLES_ROOT), ids=lambda p: p.name)
