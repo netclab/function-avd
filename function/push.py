@@ -18,7 +18,7 @@ Two identities cooperate, because neither alone is enough:
   compared on every OBSERVE: any manual change on the box flips it.
 
 Everything here is pure and offline-testable; the live wiring lives in
-``composite_fn``.
+``fn.py``.
 """
 
 from __future__ import annotations

@@ -7,7 +7,7 @@ Crossplane passes resources as protobuf `Struct`, whose only numeric type is
 
 from __future__ import annotations
 
-from avd_live_model.composite_fn import _normalize_numbers
+from function.fn import _normalize_numbers
 
 
 def test_whole_number_floats_become_ints() -> None:

@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from avd_live_model import push
+from function import push
 
 HASH = "sha256:196c053fa8537e1c"
 REV = "196c053fa8537e1c"

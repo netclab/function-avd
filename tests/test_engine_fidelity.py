@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from avd_live_model.ansible_inputs import build_all_inputs
-from avd_live_model.engine import render_structured_configs
-from avd_live_model.verify_example import _diff
+from function.ansible_inputs import build_all_inputs
+from function.engine import render_structured_configs
+from function.verify_example import _diff
 
 EXAMPLES_ROOT = Path("avd/ansible_collections/arista/avd/examples")
 

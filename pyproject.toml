@@ -1,5 +1,5 @@
 [project]
-name = "netclab-avd"
+name = "function-avd"
 version = "0.1.0"
 description = "Living AVD model driven by Crossplane XRs (Fabric -> Device composite function)"
 readme = "README.md"
@@ -14,10 +14,10 @@ dependencies = [
 ]
 
 [project.scripts]
-avd-verify = "avd_live_model.verify_example:main"
-avd-verify-xr = "avd_live_model.verify_xr:main"
-avd-function = "avd_live_model.composite_fn:cli"
-avd-topology = "avd_live_model.netclab_topology:main"
+avd-verify = "function.verify_example:main"
+avd-verify-xr = "function.verify_xr:main"
+avd-function = "function.main:main"
+avd-topology = "function.netclab_topology:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
@@ -33,7 +33,8 @@ requires = ["uv_build>=0.11.7,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-# The distribution is named for the repo (netclab-avd); the import package kept
-# its own name. Without this the backend would derive `netclab_avd` from the
-# project name and fail to find the module.
-module-name = "avd_live_model"
+# crossplane/function-template-python layout: a flat `function/` package at the
+# repo root. The backend would otherwise derive `function_avd` from the project
+# name and look for it under src/.
+module-root = ""
+module-name = "function"

@@ -1,6 +1,6 @@
-# netclab-avd
+# function-avd
 
-[![CI](https://github.com/netclab/netclab-avd/actions/workflows/ci.yml/badge.svg)](https://github.com/netclab/netclab-avd/actions/workflows/ci.yml)
+[![CI](https://github.com/netclab/function-avd/actions/workflows/ci.yml/badge.svg)](https://github.com/netclab/function-avd/actions/workflows/ci.yml)
 
 **Arista AVD configs, kept live by Kubernetes.** Instead of running Ansible to produce
 device configs once, a fabric is modelled as a Crossplane composite resource: edit the
@@ -13,7 +13,9 @@ wrapped in a Crossplane composite function. Built against
 `avd/` — a read-only reference, and the source of the golden configs the tests diff
 against.
 
-> The distribution is `netclab-avd`; the import package is `avd_live_model`.
+> The layout follows [function-template-python](https://github.com/crossplane/function-template-python):
+> the code lives in a flat `function/` package, with `main.py` as the gRPC
+> entrypoint and `fn.py` as the FunctionRunner.
 
 ## Quick start
 
@@ -146,7 +148,7 @@ against the example's checked-in `intended/structured_configs`.
 
 Zero diffs everywhere it is ticked, across both group_vars layouts (per-group directories
 and flat files) and explicit and implicit `all` inventories. The fold
-(`avd_live_model.xr`) unions each DC's node-type blocks and pushes per-DC/per-pod
+(`function/xr.py`) unions each DC's node-type blocks and pushes per-DC/per-pod
 `defaults` down to node_groups/nodes (which override defaults in AVD), so multi-DC
 fabrics collapse losslessly into one document.
 
@@ -186,7 +188,7 @@ The non-obvious things this repo encodes, each of which cost a debugging session
 
 - **`Struct` has no integers.** Crossplane passes resources as protobuf `Struct`, whose
   only numeric type is `double`, so VLAN ids and ASNs arrive as floats and pyavd's schema
-  rejects them. `composite_fn._normalize_numbers` coerces whole-number floats back to
+  rejects them. `fn._normalize_numbers` coerces whole-number floats back to
   `int` (leaving bools and genuine fractionals alone).
 - **Never write a value that changes every reconcile.** An unconditional timestamp causes
   a perpetual reconcile and a watch storm. `lastRenderedTime` is only bumped when
@@ -251,12 +253,13 @@ The non-obvious things this repo encodes, each of which cost a debugging session
 
 | Path | Purpose |
 |------|---------|
-| `src/avd_live_model/engine.py` | pyavd pipeline wrapper; `render_fabric_design` is the function's core |
-| `src/avd_live_model/composite_fn.py` | the Crossplane composite function (`avd-function`) |
-| `src/avd_live_model/push.py` | eAPI push protocol: the provider-http `Request` builders |
-| `src/avd_live_model/xr.py` | fold an Ansible example into a `Fabric` document (block union + defaults push-down) |
-| `src/avd_live_model/ansible_inputs.py` | rebuild `all_inputs` from an Ansible example (inventory + group_vars merge) |
-| `src/avd_live_model/verify_example.py`, `verify_xr.py` | golden-diff harnesses (`avd-verify`, `avd-verify-xr`) |
+| `function/main.py` | gRPC entrypoint (`avd-function`, the image's ENTRYPOINT) |
+| `function/fn.py` | the Crossplane composite function (FunctionRunner: Fabric + Device) |
+| `function/engine.py` | pyavd pipeline wrapper; `render_fabric_design` is the function's core |
+| `function/push.py` | eAPI push protocol: the provider-http `Request` builders |
+| `function/xr.py` | fold an Ansible example into a `Fabric` document (block union + defaults push-down) |
+| `function/ansible_inputs.py` | rebuild `all_inputs` from an Ansible example (inventory + group_vars merge) |
+| `function/verify_example.py`, `verify_xr.py` | golden-diff harnesses (`avd-verify`, `avd-verify-xr`) |
 | `apis/fabric/`, `apis/device/` | XRD + Composition for each layer |
 | `apis/function/` | `Function` manifests (cluster install, and local `crossplane render`) |
 | `examples/fabric/` | example `Fabric` XRs (each reproduces golden) |

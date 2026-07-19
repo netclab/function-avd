@@ -21,7 +21,7 @@ REG_VOL=${REG_VOL:-kind-registry-data}
 IMG=function-avd-runtime
 # Bump together with function changes: the registry caches by tag and pull is
 # IfNotPresent, so rebuilding different code under an old tag ships the old image.
-TAG=${TAG:-v0.0.10}
+TAG=${TAG:-v0.0.11}
 # Pinned: an unpinned chart silently moves the cluster's Crossplane version, so
 # e2e would test a different server than the one a result was recorded against.
 # The CLI (v2.4.0) runs ahead of the chart; that skew is normal and fine.

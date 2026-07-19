@@ -137,7 +137,7 @@ def test_push_reclaims_drift_on_the_box(deployed) -> None:
 def test_push_is_idempotent_at_rest(deployed) -> None:
     """At rest the loop only reads: OBSERVE matches, nothing rewrites the box.
 
-    Guards the recording rule in composite_fn._reconcile_push: an observe
+    Guards the recording rule in fn._reconcile_push: an observe
     response may never redefine the golden digest once one is recorded, so a
     quiet device must produce a byte-stable Device push status.
     """
