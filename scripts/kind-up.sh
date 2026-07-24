@@ -10,6 +10,11 @@
 # itself falls back to HTTP for that registry automatically.
 set -euo pipefail
 
+# Before anything reads a project file: TAG below asks uv for the version, and
+# uv resolves the project from the working directory, not from this script.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
 CLUSTER=avd
 CTX="kind-${CLUSTER}"
 REG=kind-registry
@@ -19,9 +24,12 @@ REG_PORT=5001
 # throw away the ~900MB cEOS image and make the next bring-up re-import it.
 REG_VOL=${REG_VOL:-kind-registry-data}
 IMG=function-avd-runtime
-# Bump together with function changes: the registry caches by tag and pull is
-# IfNotPresent, so rebuilding different code under an old tag ships the old image.
-TAG=${TAG:-v0.0.11}
+# Read from pyproject.toml, which the release workflow also publishes under, so
+# a locally built image and a released package cannot mean different code under
+# the same tag. Bump [project].version together with function changes: the
+# registry caches by tag and pull is IfNotPresent, so rebuilding different code
+# under an old tag ships the old image.
+TAG=${TAG:-v$(uv version --short)}
 # Pinned: an unpinned chart silently moves the cluster's Crossplane version, so
 # e2e would test a different server than the one a result was recorded against.
 # The CLI (v2.4.0) runs ahead of the chart; that skew is normal and fine.
@@ -42,8 +50,6 @@ PROVIDER_HTTP=${PROVIDER_HTTP:-v1.0.14}
 # The subset of the fabric to actually run. All 8 devices is 16Gi of cEOS; two
 # make a link, and a link is enough to prove the config reached the device.
 LAB_HOSTS=${LAB_HOSTS:-dc1-spine1,dc1-leaf1a}
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
 
 echo ">> local registry (data volume: ${REG_VOL})"
 if [ -z "$(docker ps -q -f name="^${REG}$")" ]; then
