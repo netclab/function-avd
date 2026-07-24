@@ -217,7 +217,10 @@ the `netclab` organization; without it the release still succeeds and logs a war
 part that puts it on the Marketplace — is a one-time toggle in the Upbound console.
 
 Either registry makes the function installable without the local-registry dance in
-`kind-up.sh`:
+`kind-up.sh`. Pick a tag from
+[releases](https://github.com/netclab/function-avd/releases) — there is no `latest`,
+deliberately: a function whose version can move under a running cluster is not one you
+can reason about.
 
 ```yaml
 apiVersion: pkg.crossplane.io/v1
@@ -225,7 +228,7 @@ kind: Function
 metadata:
   name: function-avd
 spec:
-  package: ghcr.io/netclab/function-avd:v0.1.0
+  package: ghcr.io/netclab/function-avd:<version>
 ```
 
 ## Gotchas
