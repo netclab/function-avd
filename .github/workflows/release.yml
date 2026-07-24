@@ -1,0 +1,209 @@
+name: Release
+
+# Publishes the function package so it is installable straight from a registry,
+# without the local-registry dance in scripts/kind-up.sh:
+#
+#   ghcr.io/netclab/function-avd:<version>      (always)
+#   xpkg.upbound.io/netclab/function-avd:<ver>  (when UPBOUND_TOKEN is set)
+#
+# The Upbound push is what puts the function on
+# https://marketplace.upbound.io/functions/netclab -- the Marketplace indexes
+# that registry, so a GHCR-only release is not listed there.
+#
+# The published version is pyproject.toml's, not the git tag's: one number to
+# bump, and the tag is checked against it rather than trusted.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+# Read-only by default; only the publishing job widens this.
+permissions:
+  contents: read
+
+jobs:
+  # Publishing a broken function is worse than publishing late: the offline
+  # suite is ~seconds, so gate the release on it rather than trusting the tag.
+  test:
+    name: offline suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The fidelity tests diff against the golden structured configs in the
+          # submodule; without it they collect nothing and pass vacuously.
+          submodules: true
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked
+
+      - name: Resolve the version to publish
+        id: version
+        run: |
+          set -euo pipefail
+          # pyproject.toml is the single source of truth; kind-up.sh reads the
+          # same number, so the local image and the release cannot drift apart.
+          version="v$(uv version --short)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "publishing ${version}"
+
+          if ! [[ "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'${version}' is not a semver; xpkg push would reject it."
+            exit 1
+          fi
+
+          # A tag that disagrees with pyproject.toml means the version bump was
+          # forgotten, so publishing under either number would be a lie.
+          if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" != "${version}" ]]; then
+            echo "::error::tag ${{ github.ref_name }} != pyproject.toml version ${version}." \
+                 "Bump [project].version, or move the tag."
+            exit 1
+          fi
+
+      - run: uv run pytest -q
+
+  # One leg per architecture. The docker exporter cannot write a manifest list,
+  # so a single build with two --platform values is not an option anyway; the
+  # matrix at least runs the emulated arm64 build alongside the native one.
+  build:
+    name: xpkg (${{ matrix.arch }})
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # No submodules: .dockerignore excludes avd/ from the runtime image,
+          # and it is ~a GB of examples the package never carries.
+          fetch-depth: 1
+
+      # arm64 is emulated, which is what makes the layer cache below worth it.
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      # Cached through GitHub Actions' native backend, per
+      # https://docs.docker.com/build/cache/backends/gha/ -- worth it because the
+      # image's expensive layer is `uv sync`, and arm64 runs it under emulation.
+      - name: Build the runtime image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          tags: function-avd-runtime:${{ needs.test.outputs.version }}
+          # A docker-archive tarball, which is what --embed-runtime-image-tarball
+          # reads. Loading into the daemon instead would be a dead end: one tag
+          # cannot hold both architectures.
+          outputs: type=docker,dest=runtime-${{ matrix.arch }}.tar
+          # scope defaults to `buildkit` -- shared by both matrix legs, which
+          # would then evict each other's cache on every run. Split it per arch.
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          # The docker exporter cannot carry attestations, and xpkg build wants a
+          # plain image; kind-up.sh passes --provenance=false for the same reason.
+          provenance: false
+
+      - name: Install crossplane CLI
+        run: |
+          set -euo pipefail
+          # XP_VERSION written out in full: renovate.json's customManager keys
+          # off the literal, so an env indirection would freeze this pin.
+          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
+          sudo mv ./crossplane /usr/local/bin/crossplane
+          crossplane version --client
+
+      - name: Build the package
+        run: |
+          set -euo pipefail
+          crossplane xpkg build \
+            --package-root=package \
+            --embed-runtime-image-tarball="runtime-${{ matrix.arch }}.tar" \
+            -o "function-avd-${{ matrix.arch }}.xpkg"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: xpkg-${{ matrix.arch }}
+          path: function-avd-${{ matrix.arch }}.xpkg
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: push to GHCR + Upbound
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.test.outputs.version }}
+      # secrets are not available to job-level `if:`, so hoist the token into
+      # env and let the Upbound steps skip themselves when it is unset.
+      UP_TOKEN: ${{ secrets.UPBOUND_TOKEN }}
+    steps:
+      # No checkout: pushing packages needs the .xpkg files and nothing else.
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: xpkg-*
+          merge-multiple: true
+
+      - name: Install crossplane CLI
+        run: |
+          set -euo pipefail
+          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
+          sudo mv ./crossplane /usr/local/bin/crossplane
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GHCR
+        run: |
+          set -euo pipefail
+          # One multi-platform index over the per-arch packages, so a cluster on
+          # either architecture resolves the same tag.
+          files="$(ls ./*.xpkg | paste -sd, -)"
+          repo="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          crossplane xpkg push -f "${files}" "ghcr.io/${repo}:${VERSION}"
+
+      - name: Install up CLI
+        if: env.UP_TOKEN != ''
+        run: |
+          set -euo pipefail
+          curl -sL "https://cli.upbound.io" | VERSION=v0.51.1 sh
+          sudo mv ./up /usr/local/bin/up
+
+      - name: Push to the Upbound Marketplace
+        if: env.UP_TOKEN != ''
+        run: |
+          set -euo pipefail
+          up login --token="${UP_TOKEN}"
+          files="$(ls ./*.xpkg | paste -sd, -)"
+          # --create so the first release does not need the repository to have
+          # been made by hand in the Upbound console.
+          up xpkg push -f "${files}" --create \
+            "xpkg.upbound.io/netclab/function-avd:${VERSION}"
+
+      - name: Note a skipped Upbound push
+        if: env.UP_TOKEN == ''
+        run: |
+          echo "::warning::UPBOUND_TOKEN is not set -- pushed to GHCR only." \
+               "The Marketplace listing will not move until the token is added."

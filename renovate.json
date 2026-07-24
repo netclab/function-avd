@@ -33,6 +33,14 @@
     },
     {
       "customType": "regex",
+      "description": "up CLI version passed to the Upbound install script in the release job. Anchored on the URL: a bare VERSION= would also swallow the crossplane CLI's XP_VERSION= pin below.",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["cli\\.upbound\\.io\"\\s*\\|\\s*VERSION=(?<currentValue>v[0-9.]+)"],
+      "depNameTemplate": "upbound/up",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
       "description": "crossplane helm chart version installed by kind-up.sh",
       "managerFilePatterns": ["/^scripts/kind-up\\.sh$/"],
       "matchStrings": ["XP_CHART:-(?<currentValue>[0-9.]+)\\}"],

@@ -1,6 +1,7 @@
 # function-avd
 
 [![CI](https://github.com/netclab/function-avd/actions/workflows/ci.yml/badge.svg)](https://github.com/netclab/function-avd/actions/workflows/ci.yml)
+[![Release](https://github.com/netclab/function-avd/actions/workflows/release.yml/badge.svg)](https://github.com/netclab/function-avd/actions/workflows/release.yml)
 
 **Arista AVD configs, kept live by Kubernetes.** Instead of running Ansible to produce
 device configs once, a fabric is modelled as a Crossplane composite resource: edit the
@@ -182,6 +183,51 @@ CI gates every push and PR on the offline suite (with `submodules: true` — the
 configs live there). The e2e job builds the function image and installs Crossplane, so it
 is `workflow_dispatch` only.
 
+## Releasing
+
+`[project].version` in `pyproject.toml` is the only version number: the release workflow
+publishes under it and `kind-up.sh` tags the local image with it, so a locally built
+image and a released package can't mean different code under the same tag. Cutting a
+release is a bump, a commit, and a matching tag:
+
+```bash
+uv version 0.2.0            # edits pyproject.toml
+git commit -am 'Release v0.2.0' && git tag v0.2.0
+git push origin main v0.2.0
+```
+
+A tag that disagrees with `pyproject.toml` fails the run rather than publishing under
+either number. `workflow_dispatch` publishes too, taking no input — it releases whatever
+version the checked-out tree declares.
+
+The workflow reruns the offline suite, builds the runtime image for `linux/amd64` and
+`linux/arm64`, embeds each into an xpkg, and pushes both as one multi-platform package:
+
+| Destination | When |
+|-------------|------|
+| `ghcr.io/netclab/function-avd:<version>` | always — the workflow's `GITHUB_TOKEN` is enough |
+| `xpkg.upbound.io/netclab/function-avd:<version>` | only when the `UPBOUND_TOKEN` secret is set |
+
+The second one is what feeds
+[marketplace.upbound.io/functions/netclab](https://marketplace.upbound.io/functions/netclab):
+the Marketplace indexes `xpkg.upbound.io`, so a GHCR-only release is installable but not
+listed. `UPBOUND_TOKEN` is an Upbound robot or personal access token with write access to
+the `netclab` organization; without it the release still succeeds and logs a warning.
+`up xpkg push --create` makes the repository on first push, but marking it *public* — the
+part that puts it on the Marketplace — is a one-time toggle in the Upbound console.
+
+Either registry makes the function installable without the local-registry dance in
+`kind-up.sh`:
+
+```yaml
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-avd
+spec:
+  package: ghcr.io/netclab/function-avd:v0.1.0
+```
+
 ## Gotchas
 
 The non-obvious things this repo encodes, each of which cost a debugging session:
@@ -266,6 +312,7 @@ The non-obvious things this repo encodes, each of which cost a debugging session
 | `examples/lab/` | kustomize overlay: the same fabric as run on the netclab lab |
 | `Dockerfile`, `package/crossplane.yaml` | function runtime image + package metadata |
 | `scripts/kind-up.sh`, `kind-down.sh` | reproducible cluster bring-up / teardown |
+| `.github/workflows/` | `ci.yml` (offline suite + dispatchable e2e), `release.yml` (GHCR + Upbound) |
 | `avd/` | AVD v6.3.0 submodule (read-only) |
 
 Versions are pinned deliberately: `pyavd` matches the `avd` submodule tag, because the
