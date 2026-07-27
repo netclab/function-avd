@@ -58,11 +58,13 @@ jobs:
         run: |
           set -euo pipefail
           # Matches the version the e2e scenario was proven against locally.
+          # renovate: datasource=github-releases depName=kubernetes-sigs/kind
           curl -sSLo ./kind https://kind.sigs.k8s.io/dl/v0.31.0/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
           # XP_VERSION pins the CLI: install.sh otherwise takes whatever is
           # current, so this job would drift onto a different CLI with no commit.
+          # renovate: datasource=github-releases depName=crossplane/crossplane
           curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
           sudo mv ./crossplane /usr/local/bin/crossplane
           # kind-up.sh needs helm; the runner image ships it, but don't rely on that.

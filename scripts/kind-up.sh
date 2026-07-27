@@ -33,19 +33,25 @@ TAG=${TAG:-v$(uv version --short)}
 # Pinned: an unpinned chart silently moves the cluster's Crossplane version, so
 # e2e would test a different server than the one a result was recorded against.
 # The CLI (v2.4.0) runs ahead of the chart; that skew is normal and fine.
+# renovate: datasource=helm depName=crossplane registryUrl=https://charts.crossplane.io/stable
 XP_CHART=${XP_CHART:-2.3.3}
 # Multi-interface lab nodes (cEOS) need Multus and the bridge/host-device CNI
 # plugins. Opt-in: they add a minute to a bring-up that the offline suite and the
 # Fabric/Device tests never use. `WITH_NETCLAB=1 scripts/kind-up.sh` to get them.
 WITH_NETCLAB=${WITH_NETCLAB:-0}
+# renovate: datasource=github-releases depName=containernetworking/plugins
 CNI_PLUGINS=${CNI_PLUGINS:-v1.9.0}
-MULTUS=${MULTUS:-v4.3.0}   # netclab-chart's README points at master; pinned here
+# netclab-chart's README points at master; pinned here
+# renovate: datasource=github-releases depName=k8snetworkplumbingwg/multus-cni
+MULTUS=${MULTUS:-v4.3.0}
 # 0.5.9 is a floor, not a preference: it bootstraps cEOS eAPI on https/443, the
 # same transport AVD renders. On 0.5.8 the bootstrap was http/6021, which the
 # first pushed config replaced -- taking eAPI with it.
+# renovate: datasource=helm depName=netclab registryUrl=https://netclab.github.io/netclab-chart
 NETCLAB_CHART=${NETCLAB_CHART:-0.5.9}
 # v1.0.14 is a floor too: the config push composes a *namespaced* Request
 # (http.m.crossplane.io), which older provider-http releases do not serve.
+# renovate: datasource=docker depName=xpkg.upbound.io/crossplane-contrib/provider-http
 PROVIDER_HTTP=${PROVIDER_HTTP:-v1.0.14}
 # The subset of the fabric to actually run. All 8 devices is 16Gi of cEOS; two
 # make a link, and a link is enough to prove the config reached the device.

@@ -6,5 +6,29 @@ metadata:
   name: function-avd
   annotations:
     meta.crossplane.io/maintainer: netclab.dev
+    meta.crossplane.io/source: github.com/netclab/function-avd
+    meta.crossplane.io/license: Apache-2.0
     meta.crossplane.io/description: >-
       Expands an avd.netclab.dev Fabric into per-device AVD structured configs.
+    # Renders as the body of the Marketplace page; without it the listing is
+    # a bare title. There is no Inputs section by design -- this function takes
+    # no function input, it reads the Fabric/Device XR spec.
+    meta.crossplane.io/readme: |
+      This composition function runs [pyavd](https://pypi.org/project/pyavd/)
+      inside Crossplane. It serves two composite kinds from the
+      `avd.netclab.dev` API group:
+
+      * a `Fabric` XR is expanded through the fabric-wide AVD pipeline into one
+        `Device` XR per host, each carrying that device's structured config;
+      * a `Device` XR validates and renders its own structured config and EOS
+        CLI, publishes them as a ConfigMap, and -- with `spec.push` set --
+        composes a provider-http `Request` that keeps the box's running config
+        in sync over eAPI.
+
+      The function takes no function input: everything comes from the XR, so
+      the XRDs are the API. See the
+      [README](https://github.com/netclab/function-avd) for the XRD schemas,
+      a runnable kind lab, and the design notes.
+spec:
+  capabilities:
+  - composition

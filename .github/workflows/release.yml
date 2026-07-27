@@ -123,8 +123,7 @@ jobs:
       - name: Install crossplane CLI
         run: |
           set -euo pipefail
-          # XP_VERSION written out in full: renovate.json's customManager keys
-          # off the literal, so an env indirection would freeze this pin.
+          # renovate: datasource=github-releases depName=crossplane/crossplane
           curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
           sudo mv ./crossplane /usr/local/bin/crossplane
           crossplane version --client
@@ -167,6 +166,7 @@ jobs:
       - name: Install crossplane CLI
         run: |
           set -euo pipefail
+          # renovate: datasource=github-releases depName=crossplane/crossplane
           curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
           sudo mv ./crossplane /usr/local/bin/crossplane
 
@@ -190,6 +190,7 @@ jobs:
         if: env.UP_TOKEN != ''
         run: |
           set -euo pipefail
+          # renovate: datasource=github-releases depName=upbound/up
           curl -sL "https://cli.upbound.io" | VERSION=v0.51.1 sh
           sudo mv ./up /usr/local/bin/up
 
