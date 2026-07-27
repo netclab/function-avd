@@ -213,8 +213,9 @@ The second one is what feeds
 the Marketplace indexes `xpkg.upbound.io`, so a GHCR-only release is installable but not
 listed. `UPBOUND_TOKEN` is an Upbound robot or personal access token with write access to
 the `netclab` organization; without it the release still succeeds and logs a warning.
-`up xpkg push --create` makes the repository on first push, but marking it *public* — the
-part that puts it on the Marketplace — is a one-time toggle in the Upbound console.
+`up xpkg push --create` makes the repository on first push, but pushing is not publishing
+— see the Marketplace gotcha below for the one-time step that actually produces a public
+listing.
 
 Either registry makes the function installable without the local-registry dance in
 `kind-up.sh`. Pick a tag from
@@ -235,6 +236,20 @@ spec:
 
 The non-obvious things this repo encodes, each of which cost a debugging session:
 
+- **Pushing to Upbound is not publishing, and `PUBLIC` doesn't mean listed.** A repository
+  created by `up xpkg push --create` gets the publishing policy `draft`. Nothing in the
+  release output says so, and as the repository's owner you can open its Marketplace page
+  while logged in — so it looks published when anonymously there is no listing at all.
+  The `PUBLIC` column is a separate axis: it governs anonymous *pull* from the registry,
+  which works fine throughout. `up repository list` is the ground truth; fix it once with
+  `up repository update --private=false --publish function-avd` (both flags are required,
+  so `--private` has to be given explicitly). The policy is a repository attribute, not a
+  version one, so correcting it never needs a new release.
+- **A bare 401 from a registry doesn't mean private.** Both `ghcr.io` and `xpkg.upbound.io`
+  answer an unauthenticated manifest request with `401` and a
+  `www-authenticate: Bearer realm=…` header — the normal Docker token flow. Exchange for
+  an anonymous token at that realm first, then judge visibility by whether *that* succeeds.
+  Reading the 401 directly is how you conclude a public package is private.
 - **`Struct` has no integers.** Crossplane passes resources as protobuf `Struct`, whose
   only numeric type is `double`, so VLAN ids and ASNs arrive as floats and pyavd's schema
   rejects them. `fn._normalize_numbers` coerces whole-number floats back to
