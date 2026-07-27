@@ -40,7 +40,7 @@ XP_CHART=${XP_CHART:-2.3.3}
 # Fabric/Device tests never use. `WITH_NETCLAB=1 scripts/kind-up.sh` to get them.
 WITH_NETCLAB=${WITH_NETCLAB:-0}
 # renovate: datasource=github-releases depName=containernetworking/plugins
-CNI_PLUGINS=${CNI_PLUGINS:-v1.9.0}
+CNI_PLUGINS=${CNI_PLUGINS:-v1.9.1}
 # netclab-chart's README points at master; pinned here
 # renovate: datasource=github-releases depName=k8snetworkplumbingwg/multus-cni
 MULTUS=${MULTUS:-v4.3.0}
