@@ -36,6 +36,72 @@ jobs:
 
       - run: uv run pytest -q
 
+  # The offline suite runs on the runner's interpreter, so it says nothing about
+  # the image the xpkg actually embeds. Without this job a Dockerfile, uv or
+  # Python bump is only exercised by the release build -- i.e. after the tag,
+  # when the cheap moment to react has passed.
+  image:
+    name: runtime image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # No submodules: .dockerignore keeps avd/ out of the image anyway.
+          fetch-depth: 1
+
+      - uses: docker/setup-buildx-action@v4
+
+      # amd64 only. The release also builds arm64, but that leg is emulated and
+      # slow, and a Dockerfile broken enough to matter breaks on both.
+      - name: Build the runtime image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: function-avd-runtime:ci
+          # xpkg wants a plain image; kind-up.sh passes --provenance=false too.
+          provenance: false
+          # Its own cache scope: a PR build must not evict the release's, which
+          # is the one that has to carry an emulated arm64 build.
+          cache-from: type=gha,scope=ci-amd64
+          cache-to: type=gha,mode=max,scope=ci-amd64
+
+      # A build that succeeds is the weaker claim. An image can install cleanly
+      # and still fail to import pyavd or to serve, and neither shows up until
+      # something pulls the published package.
+      - name: Smoke-test the image
+        run: |
+          set -euo pipefail
+          docker run --rm -i --entrypoint /app/.venv/bin/python function-avd-runtime:ci - <<'PY'
+          import sys, pyavd
+          from function import fn
+          print("python", sys.version.split()[0], "/ pyavd", pyavd.__version__)
+          assert hasattr(fn, "FunctionRunner"), "function package did not import"
+          # Exercise the schema machinery, not just the import: a bad interpreter
+          # or a half-installed dependency surfaces here, not at import time.
+          pyavd.validate_inputs({"hostname": "smoke", "fabric_name": "smoke"})
+          print("pyavd validate_inputs OK")
+          PY
+
+          # And that the entrypoint actually serves, which is all Crossplane
+          # ever asks of this image.
+          docker run -d --name smoke function-avd-runtime:ci --insecure >/dev/null
+          for _ in $(seq 30); do
+            if docker exec smoke /app/.venv/bin/python \
+                 -c "import socket; socket.create_connection(('127.0.0.1', 9443), 1).close()" 2>/dev/null; then
+              served=1; break
+            fi
+            sleep 1
+          done
+          docker logs smoke
+          docker rm -f smoke >/dev/null
+          if [ "${served:-0}" != 1 ]; then
+            echo "::error::the entrypoint never accepted a connection on 9443"
+            exit 1
+          fi
+          echo "entrypoint served on 9443"
+
   e2e:
     name: e2e on kind
     # Builds the function image and installs Crossplane, so it is far too heavy
