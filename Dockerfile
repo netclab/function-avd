@@ -4,7 +4,7 @@
 FROM python:3.12-slim
 
 # uv for reproducible, fast dependency install from the committed lockfile.
-COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /bin/
 
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 \
