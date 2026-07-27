@@ -34,7 +34,7 @@ TAG=${TAG:-v$(uv version --short)}
 # e2e would test a different server than the one a result was recorded against.
 # The CLI (v2.4.0) runs ahead of the chart; that skew is normal and fine.
 # renovate: datasource=helm depName=crossplane registryUrl=https://charts.crossplane.io/stable
-XP_CHART=${XP_CHART:-2.3.3}
+XP_CHART=${XP_CHART:-2.3.4}
 # Multi-interface lab nodes (cEOS) need Multus and the bridge/host-device CNI
 # plugins. Opt-in: they add a minute to a bring-up that the offline suite and the
 # Fabric/Device tests never use. `WITH_NETCLAB=1 scripts/kind-up.sh` to get them.
