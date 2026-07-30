@@ -1,6 +1,6 @@
 [project]
 name = "function-avd"
-version = "0.1.2"
+version = "0.1.3"
 description = "Living AVD model driven by Crossplane XRs (Fabric -> Device composite function)"
 readme = "README.md"
 authors = [
