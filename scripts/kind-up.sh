@@ -103,12 +103,12 @@ kubectl --context "$CTX" apply -f - <<EOF
 apiVersion: pkg.crossplane.io/v1
 kind: Function
 metadata:
-  name: function-avd
+  name: netclab-function-avd
 spec:
   package: ${REG_IP}:5000/netclab/function-avd:${TAG}
   packagePullPolicy: IfNotPresent
 EOF
-kubectl --context "$CTX" wait --for=condition=Healthy function.pkg.crossplane.io/function-avd --timeout=180s
+kubectl --context "$CTX" wait --for=condition=Healthy function.pkg.crossplane.io/netclab-function-avd --timeout=180s
 
 echo ">> install XRDs + Compositions (Fabric + Device)"
 kubectl --context "$CTX" apply -f apis/fabric/xrd.yaml -f apis/device/xrd.yaml

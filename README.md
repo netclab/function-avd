@@ -78,7 +78,7 @@ provider's poll interval, the same rhythm that paces the rest of the model.
 uv run avd-verify           # pyavd vs AVD's own golden structured configs
 uv run avd-verify-xr        # same, through the Fabric-XR fold
 crossplane render examples/fabric/single-dc-l3ls.yaml \
-  apis/fabric/composition.yaml apis/function/function-render.yaml
+  apis/fabric/composition.yaml dev/function-render.yaml
 ```
 
 ## How it works
@@ -201,12 +201,16 @@ either number. `workflow_dispatch` publishes too, taking no input — it release
 version the checked-out tree declares.
 
 The workflow reruns the offline suite, builds the runtime image for `linux/amd64` and
-`linux/arm64`, embeds each into an xpkg, and pushes both as one multi-platform package:
+`linux/arm64`, embeds each into an xpkg, and pushes both as one multi-platform package.
+It also builds a **second package** — `configuration-avd`, the API this function serves
+— and pushes it separately, under the same version:
 
 | Destination | When |
 |-------------|------|
 | `ghcr.io/netclab/function-avd:<version>` | always — the workflow's `GITHUB_TOKEN` is enough |
+| `ghcr.io/netclab/configuration-avd:<version>` | always |
 | `xpkg.upbound.io/netclab/function-avd:<version>` | only when the `UPBOUND_TOKEN` secret is set |
+| `xpkg.upbound.io/netclab/configuration-avd:<version>` | only when the `UPBOUND_TOKEN` secret is set |
 
 The second one is what feeds
 [marketplace.upbound.io/functions/netclab](https://marketplace.upbound.io/functions/netclab):
@@ -231,6 +235,30 @@ metadata:
 spec:
   package: ghcr.io/netclab/function-avd:<version>
 ```
+
+### The Configuration package
+
+A Function package **cannot carry XRDs or Compositions** — `crossplane xpkg build`
+rejects both with `object is not a CRD`, because a Function package takes only the CRDs
+describing its input, and this function has none (the XRs are its API). So
+`apis/fabric/` and `apis/device/` ship as their own Configuration, built from `apis/`
+with `apis/crossplane.yaml` as its metadata.
+
+Installing it pulls the function in as a dependency, so this is the one line a consumer
+needs:
+
+```yaml
+apiVersion: pkg.crossplane.io/v1
+kind: Configuration
+metadata:
+  name: configuration-avd
+spec:
+  package: ghcr.io/netclab/configuration-avd:<version>
+```
+
+Crossplane names a dependency-installed function `<org>-<name>`, so the Function object
+lands as `netclab-function-avd` — which is exactly the name both Compositions reference
+and the name `kind-up.sh` installs under, so the dev cluster and a real install agree.
 
 ## Gotchas
 
@@ -325,7 +353,8 @@ The non-obvious things this repo encodes, each of which cost a debugging session
 | `function/ansible_inputs.py` | rebuild `all_inputs` from an Ansible example (inventory + group_vars merge) |
 | `function/verify_example.py`, `verify_xr.py` | golden-diff harnesses (`avd-verify`, `avd-verify-xr`) |
 | `apis/fabric/`, `apis/device/` | XRD + Composition for each layer |
-| `apis/function/` | `Function` manifests (cluster install, and local `crossplane render`) |
+| `apis/crossplane.yaml` | Configuration package metadata — `apis/` is that package's root |
+| `dev/` | `Function` manifests for local use (kind install, `crossplane render`); outside `apis/` so the Configuration build needs no exclusions |
 | `examples/fabric/` | example `Fabric` XRs (each reproduces golden) |
 | `examples/lab/` | kustomize overlay: the same fabric as run on the netclab lab |
 | `Dockerfile`, `package/crossplane.yaml` | function runtime image + package metadata |
