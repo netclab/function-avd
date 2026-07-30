@@ -143,6 +143,108 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The API this function serves, published as its own package. A Function
+  # package cannot carry XRDs or Compositions -- `xpkg build` rejects both with
+  # "object is not a CRD" -- so the only way to ship the avd.netclab.dev API is
+  # a Configuration, and it is released from here, beside the function it
+  # depends on and under the same version.
+  #
+  # Deliberately NOT an `xpkg-*` artifact: the publish job below globs every
+  # .xpkg it downloads into one multi-platform index, and this package must not
+  # be folded into the function's.
+  configuration:
+    name: configuration package
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Install crossplane CLI
+        run: |
+          set -euo pipefail
+          # renovate: datasource=github-releases depName=crossplane/crossplane
+          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
+          sudo mv ./crossplane /usr/local/bin/crossplane
+
+      - name: Build the Configuration package
+        run: |
+          set -euo pipefail
+          crossplane xpkg build \
+            --package-root=apis \
+            --examples-root=examples/fabric \
+            -o "configuration-avd-${{ needs.test.outputs.version }}.xpkg"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: configuration-xpkg
+          path: ./*.xpkg
+          if-no-files-found: error
+
+  publish-configuration:
+    name: push configuration to GHCR + Upbound
+    needs: [test, configuration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.test.outputs.version }}
+      UP_TOKEN: ${{ secrets.UPBOUND_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: configuration-xpkg
+
+      - name: Install crossplane CLI
+        run: |
+          set -euo pipefail
+          # renovate: datasource=github-releases depName=crossplane/crossplane
+          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
+          sudo mv ./crossplane /usr/local/bin/crossplane
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GHCR
+        run: |
+          set -euo pipefail
+          # A Configuration is YAML with no runtime image, so there is nothing
+          # to build per architecture and this is a single-file push.
+          file="$(ls ./configuration-avd-*.xpkg)"
+          crossplane xpkg push -f "${file}" \
+            "ghcr.io/netclab/configuration-avd:${VERSION}"
+
+      - name: Install up CLI
+        if: env.UP_TOKEN != ''
+        run: |
+          set -euo pipefail
+          # renovate: datasource=github-releases depName=upbound/up
+          curl -sL "https://cli.upbound.io" | VERSION=v0.51.1 sh
+          sudo mv ./up /usr/local/bin/up
+
+      - name: Push to the Upbound Marketplace
+        if: env.UP_TOKEN != ''
+        run: |
+          set -euo pipefail
+          up login --token="${UP_TOKEN}"
+          file="$(ls ./configuration-avd-*.xpkg)"
+          up xpkg push -f "${file}" --create \
+            "xpkg.upbound.io/netclab/configuration-avd:${VERSION}"
+
+      - name: Note a skipped Upbound push
+        if: env.UP_TOKEN == ''
+        run: |
+          echo "::warning::UPBOUND_TOKEN is not set -- configuration pushed to" \
+               "GHCR only."
+
   publish:
     name: push to GHCR + Upbound
     needs: [test, build]

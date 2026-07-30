@@ -14,4 +14,4 @@ spec:
   pipeline:
     - step: render-device
       functionRef:
-        name: function-avd
+        name: netclab-function-avd

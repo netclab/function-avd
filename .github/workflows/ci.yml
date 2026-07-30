@@ -36,6 +36,38 @@ jobs:
 
       - run: uv run pytest -q
 
+  # `xpkg build` is not a lint: it parses every YAML under --package-root and
+  # rejects anything that is not a valid manifest of a kind the Configuration
+  # scheme knows. So a green build here is a real statement about both XRDs,
+  # both Compositions and all six examples.
+  #
+  # No --ignore: the dev-only Function manifests live in `dev/`, outside this
+  # package root, precisely so this build needs no exclusions. Putting a
+  # `Function` back under apis/ fails with "no kind Function is registered".
+  configuration:
+    name: configuration package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Install crossplane CLI
+        run: |
+          set -euo pipefail
+          # renovate: datasource=github-releases depName=crossplane/crossplane
+          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
+          sudo mv ./crossplane /usr/local/bin/crossplane
+
+      - name: Build the Configuration package
+        run: |
+          set -euo pipefail
+          crossplane xpkg build \
+            --package-root=apis \
+            --examples-root=examples/fabric \
+            -o configuration-avd-ci.xpkg
+
   # The offline suite runs on the runner's interpreter, so it says nothing about
   # the image the xpkg actually embeds. Without this job a Dockerfile, uv or
   # Python bump is only exercised by the release build -- i.e. after the tag,
