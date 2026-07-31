@@ -44,9 +44,13 @@ CNI_PLUGINS=${CNI_PLUGINS:-v1.9.1}
 # netclab-chart's README points at master; pinned here
 # renovate: datasource=github-releases depName=k8snetworkplumbingwg/multus-cni
 MULTUS=${MULTUS:-v4.3.0}
-# 0.5.9 is a floor, not a preference: it bootstraps cEOS eAPI on https/443, the
-# same transport AVD renders. On 0.5.8 the bootstrap was http/6021, which the
-# first pushed config replaced -- taking eAPI with it.
+# 0.5.9 is the real floor: it bootstraps cEOS eAPI on https/443, the same
+# transport AVD renders. On 0.5.8 the bootstrap was http/6021, which the first
+# pushed config replaced -- taking eAPI with it.
+#
+# Tracking 0.5.11 anyway, though nothing here needs it: its fixes are to
+# RESTCONF, which this lab does not use. Staying current is cheaper than
+# discovering the gap the day something does.
 # renovate: datasource=helm depName=netclab registryUrl=https://netclab.github.io/netclab-chart
 NETCLAB_CHART=${NETCLAB_CHART:-0.5.11}
 # v1.0.14 is a floor too: the config push composes a *namespaced* Request
