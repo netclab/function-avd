@@ -48,7 +48,7 @@ MULTUS=${MULTUS:-v4.3.0}
 # same transport AVD renders. On 0.5.8 the bootstrap was http/6021, which the
 # first pushed config replaced -- taking eAPI with it.
 # renovate: datasource=helm depName=netclab registryUrl=https://netclab.github.io/netclab-chart
-NETCLAB_CHART=${NETCLAB_CHART:-0.5.9}
+NETCLAB_CHART=${NETCLAB_CHART:-0.5.11}
 # v1.0.14 is a floor too: the config push composes a *namespaced* Request
 # (http.m.crossplane.io), which older provider-http releases do not serve.
 # renovate: datasource=docker depName=xpkg.upbound.io/crossplane-contrib/provider-http
