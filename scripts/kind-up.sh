@@ -55,7 +55,15 @@ NETCLAB_CHART=${NETCLAB_CHART:-0.5.9}
 PROVIDER_HTTP=${PROVIDER_HTTP:-v1.0.14}
 # The subset of the fabric to actually run. All 8 devices is 16Gi of cEOS; two
 # make a link, and a link is enough to prove the config reached the device.
-LAB_HOSTS=${LAB_HOSTS:-dc1-spine1,dc1-leaf1a}
+# At the default, the committed topology is used as-is; anything else is
+# regenerated from LAB_FABRIC below.
+LAB_HOSTS_DEFAULT=dc1-spine1,dc1-leaf1a
+LAB_HOSTS=${LAB_HOSTS:-$LAB_HOSTS_DEFAULT}
+# The Fabric the lab runs, and the topology derived from it. Keep the two in
+# step: regenerate with
+#   uv run avd-topology "$LAB_FABRIC" --hosts "$LAB_HOSTS_DEFAULT" > "$LAB_TOPOLOGY"
+LAB_FABRIC=${LAB_FABRIC:-examples/fabric/single-dc-l3ls.yaml}
+LAB_TOPOLOGY=${LAB_TOPOLOGY:-examples/lab/topology.yaml}
 
 echo ">> local registry (data volume: ${REG_VOL})"
 if [ -z "$(docker ps -q -f name="^${REG}$")" ]; then
@@ -167,12 +175,21 @@ EOF
 
   # The topology is derived from the lab fabric, not written by hand: AVD resolves
   # the cabling, so the lab cannot be wired differently from the config it runs.
-  echo ">> lab topology from examples/lab (${LAB_HOSTS})"
-  TOPO="$(mktemp -t netclab-topology.XXXXXX.yaml)"
-  LAB_FABRIC="$(mktemp -t lab-fabric.XXXXXX.yaml)"
-  trap 'rm -f "$TOPO" "$LAB_FABRIC"' EXIT
-  kubectl kustomize examples/lab > "$LAB_FABRIC"
-  uv run avd-topology "$LAB_FABRIC" --hosts "$LAB_HOSTS" > "$TOPO"
+  #
+  # The default subset is generated once and committed, so this boots a
+  # reviewed artifact and `test_topology_golden` can fail when an AVD upgrade
+  # changes the peering. Asking for a different subset regenerates, because
+  # --hosts is an input to generation and not a filter applied afterwards: a
+  # link survives only when both of its ends are selected.
+  if [ "$LAB_HOSTS" = "$LAB_HOSTS_DEFAULT" ]; then
+    echo ">> lab topology from ${LAB_TOPOLOGY} (${LAB_HOSTS})"
+    TOPO="$LAB_TOPOLOGY"
+  else
+    echo ">> lab topology regenerated for ${LAB_HOSTS}"
+    TOPO="$(mktemp -t netclab-topology.XXXXXX.yaml)"
+    trap 'rm -f "$TOPO"' EXIT
+    uv run avd-topology "$LAB_FABRIC" --hosts "$LAB_HOSTS" > "$TOPO"
+  fi
 
   # cEOS cannot be pulled: it is licensed and needs an Arista login. Fail here
   # with the tag the topology asks for, rather than as an ImagePullBackOff later.

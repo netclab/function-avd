@@ -1,0 +1,22 @@
+# Generated from examples/fabric/single-dc-l3ls.yaml by avd-topology -- do not edit.
+# b1: dc1-leaf1a:Ethernet1 <-> dc1-spine1:Ethernet1
+topology:
+  networks:
+  - name: b1
+  nodes:
+  - name: dc1-spine1
+    type: ceos
+    image: localhost:5001/netclab/ceos:4.36.1F
+    memory: 2Gi
+    cpu: 1000m
+    interfaces:
+    - name: eth1
+      network: b1
+  - name: dc1-leaf1a
+    type: ceos
+    image: localhost:5001/netclab/ceos:4.36.1F
+    memory: 2Gi
+    cpu: 1000m
+    interfaces:
+    - name: eth1
+      network: b1
