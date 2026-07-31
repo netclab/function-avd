@@ -327,7 +327,7 @@ wheels = [
 
 [[package]]
 name = "function-avd"
-version = "0.1.4"
+version = "0.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "crossplane-function-sdk-python" },

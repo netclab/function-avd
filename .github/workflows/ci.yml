@@ -68,6 +68,24 @@ jobs:
             --examples-root=examples/fabric \
             -o configuration-avd-ci.xpkg
 
+      # The Function package's own build, minus the runtime image -- embedding
+      # needs a built tarball, and nothing here depends on it to answer the
+      # question this step asks: does `package/` plus the examples still parse?
+      #
+      # Added after the v0.1.4 release failed on exactly this. `--examples-root`
+      # defaults to ./examples, so this build collected a helm values file that
+      # had just landed under examples/ and rejected it -- a failure reachable
+      # only from the release, i.e. after the tag. The configuration build above
+      # could not have caught it: it names a narrower examples root, so the two
+      # builds disagreed about what "the examples" are.
+      - name: Build the Function package
+        run: |
+          set -euo pipefail
+          crossplane xpkg build \
+            --package-root=package \
+            --examples-root=examples/fabric \
+            -o function-avd-ci.xpkg
+
   # The offline suite runs on the runner's interpreter, so it says nothing about
   # the image the xpkg actually embeds. Without this job a Dockerfile, uv or
   # Python bump is only exercised by the release build -- i.e. after the tag,

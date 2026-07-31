@@ -128,11 +128,23 @@ jobs:
           sudo mv ./crossplane /usr/local/bin/crossplane
           crossplane version --client
 
+      # --examples-root is stated even though `package/` is the package root,
+      # because it is NOT optional: it defaults to ./examples, so leaving it out
+      # does not mean "no examples" -- it means "every YAML under examples/,
+      # whatever ends up there". That default broke the v0.1.4 release, when
+      # examples/lab/topology.yaml (helm values, no `kind`) landed beside the
+      # fabric examples and this build rejected it with "Object 'Kind' is
+      # missing". --ignore is no help: it does not reach --examples-root.
+      #
+      # examples/fabric is what both packages ship, and it holds Fabric XRs and
+      # nothing else. examples/lab is lab scaffolding, not a demonstration of
+      # the API.
       - name: Build the package
         run: |
           set -euo pipefail
           crossplane xpkg build \
             --package-root=package \
+            --examples-root=examples/fabric \
             --embed-runtime-image-tarball="runtime-${{ matrix.arch }}.tar" \
             -o "function-avd-${{ matrix.arch }}.xpkg"
 
