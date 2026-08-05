@@ -27,7 +27,17 @@ from .engine import render_fabric_design
 # the readable link written alongside as a comment.
 MAX_IFNAME = 15
 
-CEOS_IMAGE = "localhost:5001/netclab/ceos:4.36.1F"
+# No registry, deliberately. The generated topology is committed and fetched at
+# a tag by other repositories, so it is read far more often than it is run here
+# -- and a machine-local registry address in a published artifact is wrong for
+# everyone but the machine that has it. `docker import` + `kind load` names the
+# image exactly this way, which is what a reader following netclab-xp's
+# documentation ends up with.
+#
+# Bring-up scripts that do serve cEOS from a registry rewrite this: it is one
+# line against a temp copy, and local specifics belong in a script rather than
+# in something published. See `scripts/kind-up.sh`.
+CEOS_IMAGE = "ceos:4.36.1F"
 CEOS_MEMORY = "2Gi"
 CEOS_CPU = "1000m"
 

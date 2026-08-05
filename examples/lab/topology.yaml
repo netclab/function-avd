@@ -6,7 +6,7 @@ topology:
   nodes:
   - name: dc1-spine1
     type: ceos
-    image: localhost:5001/netclab/ceos:4.36.1F
+    image: ceos:4.36.1F
     memory: 2Gi
     cpu: 1000m
     interfaces:
@@ -14,7 +14,7 @@ topology:
       network: b1
   - name: dc1-leaf1a
     type: ceos
-    image: localhost:5001/netclab/ceos:4.36.1F
+    image: ceos:4.36.1F
     memory: 2Gi
     cpu: 1000m
     interfaces:
