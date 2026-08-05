@@ -191,15 +191,21 @@ EOF
   else
     echo ">> lab topology regenerated for ${LAB_HOSTS}"
     TOPO="$(mktemp -t netclab-topology.XXXXXX.yaml)"
-    trap 'rm -f "$TOPO"' EXIT
+    TOPO_REGENERATED="$TOPO"
     uv run avd-topology "$LAB_FABRIC" --hosts "$LAB_HOSTS" > "$TOPO"
   fi
 
+  # The topology names the image without a registry -- the name `docker import`
+  # plus `kind load` leaves, and the one a reader of netclab-xp's documentation
+  # ends up with. This lab serves cEOS from the local registry instead, because
+  # that survives teardown. The EOS version still comes from the topology: it is
+  # generated from the AVD model, so the model decides which image the lab runs.
+  CEOS_TAG="$(awk '/image:/ {print $2; exit}' "$TOPO")"; CEOS_TAG="${CEOS_TAG##*:}"
+  CEOS_REPO=${CEOS_REPO:-netclab/ceos}
+  CEOS_IMG="localhost:${REG_PORT}/${CEOS_REPO}:${CEOS_TAG}"
+
   # cEOS cannot be pulled: it is licensed and needs an Arista login. Fail here
   # with the tag the topology asks for, rather than as an ImagePullBackOff later.
-  CEOS_IMG="$(awk '/image:/ {print $2; exit}' "$TOPO")"
-  CEOS_REPO="${CEOS_IMG#*/}"; CEOS_REPO="${CEOS_REPO%:*}"
-  CEOS_TAG="${CEOS_IMG##*:}"
   if ! curl -sf "http://localhost:${REG_PORT}/v2/${CEOS_REPO}/tags/list" \
        | grep -q "\"${CEOS_TAG}\""; then
     echo "!! ${CEOS_IMG} is not in the local registry."
@@ -208,9 +214,16 @@ EOF
     exit 1
   fi
 
+  # Rewrite a copy, never the committed file: it is an artifact other
+  # repositories fetch at a tag, and `test_topology_golden` compares it to what
+  # the generator produces.
+  TOPO_LOCAL="$(mktemp -t netclab-topology-local.XXXXXX.yaml)"
+  trap 'rm -f "$TOPO_LOCAL" "${TOPO_REGENERATED:-}"' EXIT
+  sed "s|^\( *image: \).*|\1${CEOS_IMG}|" "$TOPO" > "$TOPO_LOCAL"
+
   echo ">> netclab-chart ${NETCLAB_CHART}"
   helm upgrade --install avd netclab/netclab --version "${NETCLAB_CHART}" \
-    --kube-context "$CTX" -n default -f "$TOPO" >/dev/null
+    --kube-context "$CTX" -n default -f "$TOPO_LOCAL" >/dev/null
 fi
 
 echo
