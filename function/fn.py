@@ -29,9 +29,17 @@ from . import push
 from .engine import (
     InputValidationError,
     device_roles_from_design,
-    render_fabric_design,
+    hostnames_from_design,
+    render_structured_configs,
 )
-from .kinds import KINDS, hosts_in_blocks
+from .kinds import (
+    KINDS,
+    Input,
+    hosts_in_blocks,
+    overwrites,
+    resolve,
+    unmatched_patterns,
+)
 
 API_VERSION = "avd.netclab.dev/v1alpha1"
 
@@ -142,12 +150,24 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
         namespace = meta.get("namespace", "default")
         xr_name = meta.get("name") or (fabric_name or "fabric").lower()
 
-        if not fabric_name or not design:
-            response.fatal(rsp, "spec.fabricName and spec.design are required")
+        requires = spec.get("requires") or []
+        if not fabric_name or not (design or requires):
+            response.fatal(rsp, "spec.fabricName and spec.design or spec.requires are required")
             return
 
+        if requires:
+            all_inputs = self._collect(req, rsp, observed, requires, design, fabric_name)
+            if all_inputs is None:
+                return  # gated -- _collect reported why
+        else:
+            # The released path: one fabric-wide document handed to every device,
+            # with AVD resolving roles from the node-type blocks.
+            document = dict(design)
+            document["fabric_name"] = fabric_name
+            all_inputs = {host: document for host in hostnames_from_design(document)}
+
         try:
-            structured_configs = render_fabric_design(design, fabric_name)
+            structured_configs = render_structured_configs(all_inputs)
         except InputValidationError as err:
             resource.update_status(
                 rsp.desired.composite,
@@ -171,7 +191,12 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
             "urlTemplate", "https://{hostname}.{namespace}.svc/command-api"
         )
 
-        roles = device_roles_from_design(design)
+        # Roles come from each device's own view: with inputs, a leaf in DC1 sees
+        # DC1's node-type block and nothing of DC2's.
+        roles = {
+            host: device_roles_from_design(hostvars).get(host) or hostvars.get("type", "")
+            for host, hostvars in all_inputs.items()
+        }
         observed_devices = req.observed.resources  # keyed by composition-resource-name (hostname)
         devices = []
         for hostname, structured_config in structured_configs.items():
@@ -226,6 +251,139 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
         response.normal(
             rsp, f"Composed {len(structured_configs)} Device(s) for fabric {fabric_name}"
         )
+
+    # -- Collecting the inputs a Fabric names ---------------------------------
+
+    def _collect(  # noqa: PLR0913
+        self,
+        req: fnv1.RunFunctionRequest,
+        rsp: fnv1.RunFunctionResponse,
+        observed: dict,
+        requires: list[dict],
+        design: dict,
+        fabric_name: str,
+    ) -> dict[str, dict] | None:
+        """Ask Crossplane for the named inputs; layer them once they arrive.
+
+        Returns per-device inputs, or ``None`` when the fabric must not render --
+        the gate. That gate is not only a guard against a slow operator:
+        requirements are answered on the *next* reconcile, so the first one
+        always arrives with nothing at all, and rendering then would push a
+        fabric short of its inputs as a full config replacement.
+        """
+        namespace = (observed.get("metadata") or {}).get("namespace", "default")
+
+        # State the requirements on every reconcile. Crossplane fetches what the
+        # latest response asked for, so leaving them out once drops the inputs.
+        keys: list[tuple[str, dict]] = []
+        for index, entry in enumerate(requires):
+            kind = entry["kind"]
+            key = f"{index:03d}-{kind.lower()}-{entry['name']}"
+            keys.append((key, entry))
+            response.require_resources(
+                rsp,
+                name=key,
+                api_version="v1" if kind == "Secret" else API_VERSION,
+                kind=kind,
+                match_name=entry["name"],
+                namespace=entry.get("namespace", namespace),
+            )
+
+        pending: list[str] = []
+        absent: list[str] = []
+        inputs: list[Input] = []
+        for key, entry in keys:
+            named = f"{entry['kind']}/{entry.get('namespace', namespace)}/{entry['name']}"
+            if entry["kind"] == "Secret":
+                # In the API from the first version so the mechanism can land
+                # without a schema change, but not implemented. Refuse rather
+                # than render a fabric whose credentials are silently absent.
+                response.fatal(rsp, f"Secret inputs are not implemented yet: {named}")
+                return None
+            if key not in req.required_resources:
+                pending.append(named)
+                continue
+            items = req.required_resources[key].items
+            if not items:
+                # Crossplane looked and found nothing. The proto distinguishes
+                # this from "not fetched yet" by sending an empty Resources, and
+                # that is what lets a Fabric tell "waiting" from "missing" --
+                # the one thing this design was previously unable to do.
+                absent.append(named)
+                continue
+            inputs.append(
+                Input.from_xr(_normalize_numbers(resource.struct_to_dict(items[0].resource)))
+            )
+
+        if pending or absent:
+            detail = []
+            if absent:
+                detail.append(f"not found: {', '.join(absent)}")
+            if pending:
+                detail.append(f"not fetched yet: {', '.join(pending)}")
+            message = "; ".join(detail)
+            response.set_conditions(
+                rsp,
+                resource.Condition(
+                    typ="InputsResolved",
+                    status="False",
+                    reason="InputsMissing" if absent else "WaitingForInputs",
+                    message=message[:400],
+                ),
+            )
+            resource.update_status(
+                rsp.desired.composite,
+                {"fabricName": fabric_name, "validation": {"ok": False, "message": message}},
+            )
+            # Missing is a real problem; not-fetched-yet is the normal first pass.
+            report = response.warning if absent else response.normal
+            report(rsp, f"fabric {fabric_name} is waiting on inputs -- {message}")
+            return None
+
+        # The Fabric's own design is the first input: fabric-wide, seen by every
+        # device, and declaring whatever devices its own blocks name so a Fabric
+        # that carries both a design and a requires list still has its devices.
+        document = dict(design)
+        document["fabric_name"] = fabric_name
+        inputs.insert(
+            0,
+            Input(
+                name="fabric",
+                kind="Settings",
+                design=document,
+                all_devices=True,
+                declares=sorted(hosts_in_blocks(document)),
+            ),
+        )
+
+        if stray := unmatched_patterns(inputs):
+            listed = ", ".join(f"{name}: {pattern!r}" for name, pattern in stray)
+            response.fatal(
+                rsp,
+                f"appliesTo.matchHostnames matched no device ({listed}) -- "
+                f"a pattern that matches nothing is silent, so it is refused",
+            )
+            return None
+
+        if replaced := overwrites(inputs):
+            shown = ", ".join(f"{key} on {host} ({first} -> {second})"
+                              for host, key, first, second in replaced[:5])
+            response.warning(
+                rsp,
+                f"{len(replaced)} value(s) replaced by a later input: {shown}"
+                + (" ..." if len(replaced) > 5 else ""),
+            )
+
+        response.set_conditions(
+            rsp,
+            resource.Condition(
+                typ="InputsResolved",
+                status="True",
+                reason="AllInputsResolved",
+                message=f"{len(inputs)} input(s)",
+            ),
+        )
+        return resolve(inputs)
 
     # -- Device: validate + render one device's config -----------------------
 
