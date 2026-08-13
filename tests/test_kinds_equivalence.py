@@ -18,13 +18,16 @@ import pytest
 from function.kinds import Input, resolve
 from function.verify_kinds import (
     DEFERRED,
+    DEFERRED_RENDER,
     EXAMPLES_ROOT,
     _discover,
     _discover_molecule,
+    render_one,
     verify_one,
 )
 
 CORPUS = _discover(EXAMPLES_ROOT) + _discover_molecule()
+EXAMPLES = _discover(EXAMPLES_ROOT)
 
 
 @pytest.mark.parametrize("root", CORPUS, ids=lambda p: p.name)
@@ -37,6 +40,30 @@ def test_resolves_identically_to_ansible(root: Path) -> None:
         assert status != "ok", (
             f"{root.name} resolves now -- remove it from verify_kinds.DEFERRED "
             f"(was deferred: {DEFERRED[root.name]})"
+        )
+        return
+
+    assert status == "ok", f"{root.name}: {status}"
+
+
+@pytest.mark.parametrize("root", EXAMPLES, ids=lambda p: p.name)
+def test_render_reproduces_golden(root: Path) -> None:
+    """Rendered configs still match the checked-in golden.
+
+    Redundant as a check on the model -- matching hostvars render identically --
+    and that is not what it is for. It is the guard against pyavd itself
+    changing: an AVD upgrade slips past resolution equivalence and fails here.
+
+    Examples only. The molecule scenarios need AVD features this path does not
+    carry yet (templates loaded from files, ID pools, custom Python classes), so
+    they stay on the equivalence test until those land.
+    """
+    status, _ = render_one(root)
+
+    if root.name in DEFERRED_RENDER:
+        assert status != "ok", (
+            f"{root.name} renders clean now -- remove it from "
+            f"verify_kinds.DEFERRED_RENDER (was: {DEFERRED_RENDER[root.name]})"
         )
         return
 

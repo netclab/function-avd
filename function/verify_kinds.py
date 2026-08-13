@@ -43,6 +43,13 @@ MOLECULE_ROOT = Path("avd/ansible_collections/arista/avd/extensions/molecule")
 # can never rot silently.
 DEFERRED: dict[str, str] = {}
 
+# The same, for --render. Resolution and rendering fail for different reasons:
+# resolution is settled, rendering still runs into AVD features this path does
+# not carry yet.
+DEFERRED_RENDER: dict[str, str] = {
+    "cv-pathfinder": "ansible-vault secrets; credentials cannot live in an XR spec",
+}
+
 
 def inline_host_vars(inventory_file: Path) -> dict[str, dict]:
     """Host variables written straight into the inventory.
@@ -217,6 +224,40 @@ def verify_one(root: Path) -> tuple[str, int]:
     return "ok", 0
 
 
+def render_one(root: Path) -> tuple[str, int]:
+    """Render through the kinds path and diff against the checked-in golden.
+
+    This does **not** test the model -- if the hostvars match Ansible, and
+    :func:`verify_one` asserts they do, the render must match too. What it tests
+    is the pair (this path, this pyavd): an AVD upgrade that changes output slips
+    past resolution equivalence and fails here. That is the job `test_xr_fold`
+    does today through the fold, and this is its successor -- the fold reaches
+    6 of 8 examples, this reaches 7.
+    """
+    import yaml
+
+    from .engine import render_structured_configs
+    from .verify_example import _diff
+
+    golden = root / "intended" / "structured_configs"
+    if not golden.is_dir():
+        return "no golden", -1
+    try:
+        rendered = render_structured_configs(resolve(inputs_from_inventory(root)))
+    except Exception as err:  # noqa: BLE001 - surface any AVD/render failure
+        return f"error: {type(err).__name__}: {str(err)[:70]}", -1
+
+    total = 0
+    for hostname in sorted(rendered):
+        golden_file = golden / f"{hostname}.yml"
+        if not golden_file.is_file():
+            continue  # a scenario may render hosts it keeps no golden for
+        out: list[str] = []
+        _diff(hostname, rendered[hostname], yaml.safe_load(golden_file.read_text()) or {}, out)
+        total += len(out)
+    return ("ok" if total == 0 else f"diff ({total})"), total
+
+
 def _discover(root: Path) -> list[Path]:
     return sorted(d for d in root.iterdir() if (d / "inventory.yml").is_file())
 
@@ -237,25 +278,32 @@ def _discover_molecule(root: Path = MOLECULE_ROOT) -> list[Path]:
 
 
 def main() -> int:
-    roots = [Path(a) for a in sys.argv[1:]] or _discover(EXAMPLES_ROOT)
+    args = [a for a in sys.argv[1:] if a != "--render"]
+    rendering = "--render" in sys.argv[1:]
+    roots = [Path(a) for a in args] or _discover(EXAMPLES_ROOT)
+    check = render_one if rendering else verify_one
+    deferrals = DEFERRED_RENDER if rendering else DEFERRED
+
     failures = deferred = 0
     for root in roots:
-        status, _ = verify_one(root)
+        status, _ = check(root)
         ok = status == "ok"
-        reason = DEFERRED.get(root.name)
+        reason = deferrals.get(root.name)
         if reason and not ok:
             mark, deferred = "DEFER", deferred + 1
             status = f"deferred: {reason}"
         elif reason and ok:
             mark, failures = "XPASS", failures + 1
-            status = "resolves now -- remove from DEFERRED"
+            status = "passes now -- remove from the DEFERRED map"
         elif ok:
             mark = "OK  "
         else:
             mark, failures = "FAIL", failures + 1
         print(f"[{mark}] {root.name:26s} {status}")
+
     expected = len(roots) - deferred
-    print(f"\n{expected - failures}/{expected} inventories resolve identically to Ansible.")
+    what = "reproduce golden" if rendering else "resolve identically to Ansible"
+    print(f"\n{expected - failures}/{expected} inventories {what} ({deferred} deferred).")
     return 1 if failures else 0
 
 
