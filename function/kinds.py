@@ -29,10 +29,24 @@ molecule scenario -- 25 inventories, up to 501 devices. See
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 KINDS = ("NodeSet", "NetworkServices", "ConnectedEndpoints", "Settings")
+
+
+def matches(pattern: str, hostname: str) -> bool:
+    """AVD's own hostname-matching semantics, copied from the code not the docs.
+
+    ``shared_utils/node_type.py`` resolves ``default_node_types`` with
+    ``search(f"^{regex}$", hostname)`` -- **AVD anchors the pattern for you**, so
+    ``dc1-leaf.*`` matches a whole name. The schema's description reads as though
+    the author must anchor it; the code does it for them. Copying the description
+    instead of the code would make the same pattern mean different things in the
+    two places.
+    """
+    return re.search(f"^{pattern}$", hostname) is not None
 
 
 def is_node_block(value: Any) -> bool:
@@ -82,11 +96,14 @@ class Input:
     name: str
     kind: str
     design: dict
-    # spec.appliesTo -- exactly one of the three
+    # spec.appliesTo -- the criteria are unioned; none set means every device
     all_devices: bool = False
     node_sets: list[str] = field(default_factory=list)
     hosts: list[str] = field(default_factory=list)
-    # spec.declares -- devices this input brings into the fabric
+    match_hostnames: list[str] = field(default_factory=list)
+    # spec.declares -- devices this input brings into the fabric. Never a
+    # pattern: visibility may be matched, existence may not. A typo in a pattern
+    # would silently drop devices from the fabric.
     declares: list[str] = field(default_factory=list)
 
     @classmethod
@@ -108,19 +125,20 @@ class Input:
             all_devices=bool(applies.get("all")),
             node_sets=list(applies.get("nodeSets") or []),
             hosts=list(applies.get("hosts") or []),
+            match_hostnames=list(applies.get("matchHostnames") or []),
             declares=declares,
         )
 
     def scope(self, declared_by: dict[str, set[str]], devices: set[str]) -> set[str]:
-        """Devices that see this input."""
-        if self.all_devices:
+        """Devices that see this input. The criteria are unioned."""
+        if self.all_devices or not (self.node_sets or self.hosts or self.match_hostnames):
             return devices
-        if self.node_sets:
-            named: set[str] = set()
-            for name in self.node_sets:
-                named |= declared_by.get(name, set())
-            return devices & named
-        return devices & set(self.hosts)
+        named: set[str] = set()
+        for name in self.node_sets:
+            named |= declared_by.get(name, set())
+        named |= set(self.hosts)
+        named |= {h for h in devices for p in self.match_hostnames if matches(p, h)}
+        return devices & named
 
 
 def resolve(inputs: list[Input]) -> dict[str, dict]:
@@ -141,6 +159,26 @@ def resolve(inputs: list[Input]) -> dict[str, dict]:
         for host in inp.scope(declared_by, devices):
             out[host].update(inp.design)
     return out
+
+
+def unmatched_patterns(inputs: list[Input]) -> list[tuple[str, str]]:
+    """``(input name, pattern)`` for every ``matchHostnames`` entry matching no device.
+
+    A pattern is silent in both directions: a typo matches nothing and the input
+    quietly reaches no device, while a wide pattern quietly reaches devices it
+    was not meant to. The second is visible on status (`devices`); the first is
+    not, so the caller is expected to treat this as an error and refuse to
+    render -- the render is pushed as a full config replacement.
+    """
+    devices: set[str] = set()
+    for inp in inputs:
+        devices |= set(inp.declares)
+    return [
+        (inp.name, pattern)
+        for inp in inputs
+        for pattern in inp.match_hostnames
+        if not any(matches(pattern, host) for host in devices)
+    ]
 
 
 def overwrites(inputs: list[Input]) -> list[tuple[str, str, str, str]]:

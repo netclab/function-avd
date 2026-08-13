@@ -22,6 +22,9 @@ spec:
   names:
     kind: Fabric
     plural: fabrics
+    categories:
+    - crossplane
+    - netclab
   defaultCompositionRef:
     name: fabric-avd
   versions:
@@ -46,8 +49,45 @@ spec:
                   description: >-
                     Fabric-wide AVD eos_designs input document (node-type blocks,
                     default_node_types, tenants, connected endpoints, ...).
-                    Validated by pyavd; violations reported on status.
+                    Validated by pyavd; violations reported on status. A fabric
+                    may instead be assembled from input objects listed in
+                    spec.requires, in which case this carries only what is
+                    fabric-wide and the inputs carry the rest.
                   x-kubernetes-preserve-unknown-fields: true
+                requires:
+                  type: array
+                  description: >-
+                    The input objects composing this fabric. Only objects listed
+                    here take part in the render, however they are labelled --
+                    which is what makes the rendered document a function of this
+                    Fabric rather than of whatever else exists in the namespace,
+                    and it matters because the render is pushed as a full config
+                    replacement. An entry that does not resolve leaves the Fabric
+                    not ready, naming the object it could not find. List order is
+                    the merge order: a later input replaces an earlier one's keys,
+                    which is how a setting is narrowed to part of the fabric.
+                  items:
+                    type: object
+                    properties:
+                      kind:
+                        type: string
+                        enum:
+                          - NodeSet
+                          - NetworkServices
+                          - ConnectedEndpoints
+                          - Settings
+                          - Secret
+                      name:
+                        type: string
+                        minLength: 1
+                      namespace:
+                        type: string
+                        description: >-
+                          Namespace holding the object. Defaults to the Fabric's
+                          own namespace.
+                    required:
+                      - kind
+                      - name
                 push:
                   type: object
                   description: >-

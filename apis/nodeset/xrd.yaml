@@ -1,0 +1,126 @@
+# CompositeResourceDefinition for a set of fabric nodes.
+#
+# A NodeSet carries one node-type block's share of the eos_designs input -- the
+# shape of a single group_vars file: `<role>.defaults`, `.nodes[]`,
+# `.node_groups[]`. One NodeSet is what `DC1_L3_LEAVES.yml` is in an AVD
+# inventory, which is normally several `node_groups`, not one.
+#
+# It is the only kind that brings devices into existence. `spec.declares` is the
+# fabric's device list, and there is no second list: a node named in a block the
+# fabric does not declare is not a device. That is deliberate -- AVD inventories
+# keep the inventory and the model as two lists that may disagree, and a device
+# list in two places with nothing reconciling them is how `spec.push.hosts`
+# went wrong.
+#
+# `spec.appliesTo` is a separate question from what a NodeSet declares: it says
+# which devices *see* this input. The two coincide in simple topologies and
+# diverge in a 5-stage CLOS, where a DC's super_spine block names four devices
+# but is visible to every device of that DC.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: nodesets.avd.netclab.dev
+spec:
+  scope: Namespaced
+  group: avd.netclab.dev
+  names:
+    kind: NodeSet
+    plural: nodesets
+    categories:
+    - crossplane
+    - netclab
+  defaultCompositionRef:
+    name: nodeset-avd
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                design:
+                  type: object
+                  description: >-
+                    This input's share of the eos_designs document, in the shape
+                    of a group_vars file. Structurally open: the top-level key
+                    names come from node_type_keys, so they are decided by the
+                    document's own content and no OpenAPI schema can describe
+                    them. Validated by pyavd; violations reported on status.
+                  x-kubernetes-preserve-unknown-fields: true
+                declares:
+                  type: array
+                  description: >-
+                    Devices this NodeSet brings into the fabric. Defaults to the
+                    devices its node-type blocks name. Set it explicitly to
+                    declare devices no block mentions -- their node type then
+                    comes from default_node_types -- or to exclude a node the
+                    blocks name but the fabric does not contain.
+                  items:
+                    type: string
+                appliesTo:
+                  type: object
+                  description: >-
+                    Devices that see this input. Defaults to every device in the
+                    fabric.
+                  properties:
+                    all:
+                      type: boolean
+                    nodeSets:
+                      type: array
+                      description: Devices declared by the named NodeSets.
+                      items:
+                        type: string
+                    hosts:
+                      type: array
+                      description: Devices named directly.
+                      items:
+                        type: string
+                    matchHostnames:
+                      type: array
+                      description: >-
+                        Regular expressions matched against device names. Same
+                        semantics as AVD's own default_node_types, which matches
+                        hostnames this way: the pattern is anchored for you, so
+                        `dc1-leaf.*` matches the whole name. A pattern matching
+                        no device is an error, not an empty set -- a pattern is
+                        silent about both matching nothing and matching too much,
+                        and the render is pushed as a full config replacement.
+                      items:
+                        type: string
+              required:
+                - design
+            status:
+              type: object
+              properties:
+                keys:
+                  type: array
+                  description: Top-level eos_designs keys this input contributes.
+                  items:
+                    type: string
+                devices:
+                  type: array
+                  description: >-
+                    Devices this input resolved to. Reported rather than left to
+                    be inferred, because appliesTo may be a pattern and a pattern
+                    does not say what it matched.
+                  items:
+                    type: string
+                deviceCount:
+                  type: integer
+                  description: Devices this input declares.
+                validation:
+                  type: object
+                  description: >-
+                    Result of validating this fragment. Reported here rather than
+                    on the Fabric so the team that owns this object sees its own
+                    error on its own object.
+                  properties:
+                    ok:
+                      type: boolean
+                    message:
+                      type: string
+              x-kubernetes-preserve-unknown-fields: true

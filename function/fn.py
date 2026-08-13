@@ -31,6 +31,7 @@ from .engine import (
     device_roles_from_design,
     render_fabric_design,
 )
+from .kinds import KINDS, hosts_in_blocks
 
 API_VERSION = "avd.netclab.dev/v1alpha1"
 
@@ -94,9 +95,40 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
             self._reconcile_fabric(req, rsp, observed)
         elif kind == "Device":
             self._reconcile_device(req, rsp, observed)
+        elif kind in KINDS:
+            self._reconcile_input(rsp, observed)
         else:
             response.fatal(rsp, f"unsupported composite kind: {kind!r}")
         return rsp
+
+    # -- Inputs: a fragment of the design; they compose nothing ---------------
+
+    def _reconcile_input(self, rsp: fnv1.RunFunctionResponse, observed: dict) -> None:
+        """Report what this fragment contributes, on its own object.
+
+        An input composes nothing -- a Fabric collects it. This reconcile exists
+        so the team that owns the object sees its own shape here rather than
+        buried in someone else's Fabric status.
+
+        It cannot report `status.devices`: an input does not know the fabric's
+        device list, so `appliesTo` only resolves where the inputs are collected.
+        The Fabric fills that in. Validation is deliberately not attempted
+        either -- whether pyavd can validate a fragment standalone is unsettled,
+        and a green validation that never ran is worse than none.
+        """
+        spec = observed.get("spec") or {}
+        design = spec.get("design") or {}
+        status: dict = {"keys": sorted(design)}
+
+        if observed.get("kind") == "NodeSet":
+            declared = spec.get("declares")
+            devices = set(declared) if declared is not None else hosts_in_blocks(design)
+            status["deviceCount"] = len(devices)
+
+        resource.update_status(rsp.desired.composite, status)
+        response.normal(
+            rsp, f"{observed.get('kind')} contributes {len(design)} top-level key(s)"
+        )
 
     # -- Fabric: fabric-wide model -> one Device XR per host ------------------
 
