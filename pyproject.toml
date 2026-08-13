@@ -16,6 +16,7 @@ dependencies = [
 [project.scripts]
 avd-verify = "function.verify_example:main"
 avd-verify-xr = "function.verify_xr:main"
+avd-verify-kinds = "function.verify_kinds:main"
 avd-function = "function.main:main"
 avd-topology = "function.netclab_topology:main"
 
