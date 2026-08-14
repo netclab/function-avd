@@ -26,7 +26,7 @@ jobs:
 
       # Full version, not @v9: setup-uv publishes floating major aliases only up
       # to v7, so @v9 does not resolve. Renovate tracks the exact tag instead.
-      - uses: astral-sh/setup-uv@v9.0.0
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
 
@@ -166,7 +166,7 @@ jobs:
           submodules: true
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@v9.0.0
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
 
