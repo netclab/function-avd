@@ -1,27 +1,29 @@
-# CompositeResourceDefinition for what connects to the fabric.
+# CompositeResourceDefinition for a set of settings at any scope.
 #
-# Carries `connected_endpoints_keys.key` lists -- `servers`, `firewalls` and the
-# rest -- plus `port_profiles` and `network_ports`. Its own kind for the same
-# reason as NetworkServices: whoever attaches servers is rarely whoever owns the
-# fabric, and RBAC is granted per kind.
+# Everything that is not node-scoped and not a service: routing protocol choices,
+# `bgp_peer_groups`, `default_interfaces`, `aaa_settings`, `dns_settings`,
+# `ntp_settings`, `management_eapi`. Fabric-wide settings live on the Fabric
+# itself; this kind carries the same keys narrowed to part of the fabric, which
+# is what an AVD inventory expresses by putting them in a DC or role group.
 #
-# Named ConnectedEndpoints, not Endpoints, because Endpoints is a core/v1 kind
-# and `kubectl get endpoints` would become ambiguous.
+# The key categories across the input kinds are a convention, not a partition the
+# schema could enforce -- eos_designs' top-level key names come from its own
+# content. What the kinds separate is ownership.
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: connectedendpoints.avd.netclab.dev
+  name: settingsets.avd.netclab.dev
 spec:
   scope: Namespaced
   group: avd.netclab.dev
   names:
-    kind: ConnectedEndpoints
-    plural: connectedendpoints
+    kind: SettingSet
+    plural: settingsets
     categories:
     - crossplane
     - netclab
   defaultCompositionRef:
-    name: connectedendpoints-avd
+    name: settingset-avd
   versions:
     - name: v1alpha1
       served: true
@@ -36,10 +38,8 @@ spec:
                 design:
                   type: object
                   description: >-
-                    The endpoints this input contributes. Structurally open:
-                    the top-level key names come from connected_endpoints_keys,
-                    so they are decided by the document's own content and no
-                    OpenAPI schema can describe them.
+                    The settings this input contributes, in the shape of a
+                    group_vars file. Structurally open, like every input's design.
                   x-kubernetes-preserve-unknown-fields: true
                 appliesTo:
                   type: object

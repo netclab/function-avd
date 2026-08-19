@@ -64,8 +64,13 @@ spec:
                 appliesTo:
                   type: object
                   description: >-
-                    Devices that see this input. Defaults to every device in the
-                    fabric.
+                    Devices that see this input. Defaults to the devices this
+                    NodeSet declares, which is the common case -- a node-type
+                    block is read by its own group, the way a group_vars file
+                    is. Set it to widen that: in a 5-stage CLOS a DC's
+                    super_spine block declares four devices and is seen by every
+                    device of that DC. Every other kind defaults to the whole
+                    fabric instead, having nothing of its own to be scoped to.
                   properties:
                     all:
                       type: boolean

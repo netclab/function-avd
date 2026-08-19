@@ -1,14 +1,14 @@
-# Composition for ConnectedEndpoints: validate this fragment and report on its own status.
+# Composition for ConnectedEndpointSet: validate this fragment and report on its own status.
 # Uses the same function image as Fabric and Device, which dispatches on the
 # composite kind.
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
-  name: connectedendpoints-avd
+  name: connectedendpointset-avd
 spec:
   compositeTypeRef:
     apiVersion: avd.netclab.dev/v1alpha1
-    kind: ConnectedEndpoints
+    kind: ConnectedEndpointSet
   mode: Pipeline
   pipeline:
     - step: validate-input

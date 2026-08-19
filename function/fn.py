@@ -349,7 +349,7 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
             0,
             Input(
                 name="fabric",
-                kind="Settings",
+                kind="SettingSet",
                 design=document,
                 all_devices=True,
                 declares=sorted(hosts_in_blocks(document)),

@@ -1,4 +1,4 @@
-# CompositeResourceDefinition for a fabric's network services.
+# CompositeResourceDefinition for a set of a fabric's network services.
 #
 # Carries the tenants -- `network_services_keys.name`, `tenants` by default --
 # with their VRFs, SVIs and L2 VLANs. Its own kind because network services are
@@ -11,18 +11,18 @@
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: networkservices.avd.netclab.dev
+  name: networkservicesets.avd.netclab.dev
 spec:
   scope: Namespaced
   group: avd.netclab.dev
   names:
-    kind: NetworkServices
-    plural: networkservices
+    kind: NetworkServiceSet
+    plural: networkservicesets
     categories:
     - crossplane
     - netclab
   defaultCompositionRef:
-    name: networkservices-avd
+    name: networkserviceset-avd
   versions:
     - name: v1alpha1
       served: true

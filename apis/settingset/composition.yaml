@@ -1,14 +1,14 @@
-# Composition for NetworkServices: validate this fragment and report on its own status.
+# Composition for SettingSet: validate this fragment and report on its own status.
 # Uses the same function image as Fabric and Device, which dispatches on the
 # composite kind.
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
-  name: networkservices-avd
+  name: settingset-avd
 spec:
   compositeTypeRef:
     apiVersion: avd.netclab.dev/v1alpha1
-    kind: NetworkServices
+    kind: SettingSet
   mode: Pipeline
   pipeline:
     - step: validate-input

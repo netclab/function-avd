@@ -149,7 +149,7 @@ def test_secret_input_is_refused_until_implemented() -> None:
 def test_pattern_matching_no_device_is_refused() -> None:
     """A pattern is silent about matching nothing, so it cannot be allowed to."""
     settings = _input_xr(
-        "Settings",
+        "SettingSet",
         "typo",
         # The fabric holds only spine1, so this pattern matches nothing.
         {"design": {"ntp_settings": {}}, "appliesTo": {"matchHostnames": ["leaf.*"]}},
@@ -159,10 +159,10 @@ def test_pattern_matching_no_device_is_refused() -> None:
             _fabric(
                 [
                     {"kind": "NodeSet", "name": "spines"},
-                    {"kind": "Settings", "name": "typo"},
+                    {"kind": "SettingSet", "name": "typo"},
                 ]
             ),
-            required={"000-nodeset-spines": [SPINES], "001-settings-typo": [settings]},
+            required={"000-nodeset-spines": [SPINES], "001-settingset-typo": [settings]},
         )
     )
 
@@ -171,7 +171,7 @@ def test_pattern_matching_no_device_is_refused() -> None:
     assert not rsp.desired.resources
 
 
-@pytest.mark.parametrize("kind", ["NodeSet", "NetworkServices", "ConnectedEndpoints", "Settings"])
+@pytest.mark.parametrize("kind", ["NodeSet", "NetworkServiceSet", "ConnectedEndpointSet", "SettingSet"])
 def test_input_kinds_reconcile_and_report_their_keys(kind: str) -> None:
     """Each input reports its own shape on its own object, composing nothing."""
     rsp = _run(_request(_input_xr(kind, "an-input", {"design": {"ntp_settings": {}, "type": "x"}})))

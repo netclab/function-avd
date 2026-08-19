@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-KINDS = ("NodeSet", "NetworkServices", "ConnectedEndpoints", "Settings")
+KINDS = ("NodeSet", "NetworkServiceSet", "ConnectedEndpointSet", "SettingSet")
 
 
 def matches(pattern: str, hostname: str) -> bool:
@@ -77,16 +77,20 @@ def classify(design: dict) -> str:
     """
     if any(is_node_block(v) for v in design.values()):
         return "NodeSet"
-    if {"tenants", "network_services_keys"} & design.keys():
-        return "NetworkServices"
+    # Both spellings. AVD 6.x reads a native `network_services` list as well as
+    # the dynamic keys named by `network_services_keys` (default `tenants`) --
+    # `shared_utils/filtered_tenants.py` reads one after the other. A custom key
+    # name is only recognisable when `network_services_keys` travels with it.
+    if {"network_services", "tenants", "network_services_keys"} & design.keys():
+        return "NetworkServiceSet"
     if {
         "servers", "firewalls", "routers", "load_balancers", "storage_arrays",
         "cpes", "workstations", "access_points", "phones", "printers",
         "generic_devices", "port_profiles", "network_ports",
         "connected_endpoints_keys", "custom_connected_endpoints_keys",
     } & design.keys():
-        return "ConnectedEndpoints"
-    return "Settings"
+        return "ConnectedEndpointSet"
+    return "SettingSet"
 
 
 @dataclass
@@ -130,9 +134,21 @@ class Input:
         )
 
     def scope(self, declared_by: dict[str, set[str]], devices: set[str]) -> set[str]:
-        """Devices that see this input. The criteria are unioned."""
-        if self.all_devices or not (self.node_sets or self.hosts or self.match_hostnames):
+        """Devices that see this input. The criteria are unioned.
+
+        Omitting ``appliesTo`` means the whole fabric -- except on a ``NodeSet``,
+        where it means the devices that NodeSet declares. A node-type block seen
+        fabric-wide is not a thing Ansible can express: a ``group_vars`` file is
+        read by its group. Every NodeSet in AVD's 8 examples is scoped to exactly
+        what it declares, 26 of 26, so the default carries the common case and
+        ``appliesTo`` is left to say the uncommon one -- which is real: in a
+        5-stage CLOS a DC's ``super_spine`` block declares 4 devices and is seen
+        by all 16 of that DC.
+        """
+        if self.all_devices:
             return devices
+        if not (self.node_sets or self.hosts or self.match_hostnames):
+            return devices & set(self.declares) if self.kind == "NodeSet" else devices
         named: set[str] = set()
         for name in self.node_sets:
             named |= declared_by.get(name, set())

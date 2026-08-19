@@ -73,9 +73,9 @@ spec:
                         type: string
                         enum:
                           - NodeSet
-                          - NetworkServices
-                          - ConnectedEndpoints
-                          - Settings
+                          - NetworkServiceSet
+                          - ConnectedEndpointSet
+                          - SettingSet
                           - Secret
                       name:
                         type: string
