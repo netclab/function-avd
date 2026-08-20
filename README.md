@@ -83,8 +83,9 @@ provider's poll interval, the same rhythm that paces the rest of the model.
 **No cluster?** The engine and the function both run locally:
 
 ```bash
-uv run avd-verify           # pyavd vs AVD's own golden structured configs
-uv run avd-verify-xr        # same, through the Fabric-XR fold
+uv run avd-migrate          # AVD's own inventories -> Fabric + input XRs
+uv run avd-migrate avd/ansible_collections/arista/avd/examples/single-dc-l3ls \
+  --emit /tmp/xrs           # ... and write them out as manifests
 crossplane render examples/fabric/single-dc-l3ls.yaml \
   apis/fabric/composition.yaml dev/function-render.yaml
 ```
@@ -157,31 +158,42 @@ against the example's checked-in `intended/structured_configs`.
 
 Zero diffs everywhere it is ticked, across both group_vars layouts (per-group directories
 and flat files) and explicit and implicit `all` inventories. The fold
-(`function/xr.py`) unions each DC's node-type blocks and pushes per-DC/per-pod
-`defaults` down to node_groups/nodes (which override defaults in AVD), so multi-DC
-fabrics collapse losslessly into one document.
+An inventory becomes one `Fabric` per eos_designs play, plus one input XR per
+ownership fragment per category. Nothing is folded into a single document and
+nothing is merged: two NodeSets carrying the same node-type key never meet,
+because no device sees both.
 
-The two deferrals are understood, not mysterious:
+**The migration reimplements no part of Ansible.** `function/ansible_cli.py`
+asks it instead -- `ansible-inventory --list --export` for which group carries
+which variable, and an ad-hoc `debug` run for what a play resolves those
+variables to. The one rule the Ansible CLI does not print is group order
+(depth, then name); the migration layers the fragments with it and **refuses to
+emit anything** unless the result equals what Ansible reports.
 
-- **campus-fabric** — leaves carry RADIUS in `aaa_settings`, spines don't: a
-  fabric-global key that genuinely differs by role, with no node-scoped equivalent.
-- **cv-pathfinder** — SD-WAN multi-site (a WAN gateway across 2 routers) plus
-  ansible-vault secrets.
+Measured over AVD's own corpus: byte-identical hostvars for all 8 bundled
+examples and 19 molecule scenarios, up to 501 devices in one play; and rendered
+configs matching AVD's checked-in golden for 8 of 8 examples and 8 of 12
+molecule scenarios that ship one.
 
-They live in `verify_xr.DEFERRED` as *strict* expected failures: if one starts folding,
-the suite fails and says to remove it, so a deferral can't quietly rot.
+What the remaining four meet is upstream, not the model: pyavd implements no
+Jinja templating (`templar=None`, `NotImplementedError`), `pool_manager` needs
+somewhere for a Fabric to keep an ID pool, and one scenario loads a custom
+Python module. `avd-migrate` names each of them rather than dropping it --
+`--drop-description-templates` is the one exception, and only because dropping
+those was measured to cost `description` fields and nothing else.
 
 ## Testing
 
 ```bash
-uv run pytest              # offline: engine fidelity, the XR fold, the Struct gotcha (~7s)
+uv run pytest              # offline: resolution vs Ansible, goldens, the Struct gotcha (~50s)
+uv run pytest -m corpus    # the whole molecule corpus: 501 devices, 71 plays (~3min)
 uv run pytest -m e2e       # live cluster: needs kind-up.sh + an applied fabric (~2min)
 ```
 
 | Path | Covers |
 |------|---------|
-| `tests/test_engine_fidelity.py` | the examples above reproduce golden structured config |
-| `tests/test_xr_fold.py` | the Ansible→XR fold, over every discovered example |
+| `tests/test_kinds_equivalence.py` | the inputs resolve exactly as Ansible does, and render golden |
+| `tests/test_categories.py` | which kind a key belongs to still matches AVD's own schema |
 | `tests/test_normalize_numbers.py` | the protobuf-`Struct` double→int coercion |
 | `tests/test_push.py` | the eAPI push Request builders: session contents, digest provenance |
 | `tests/test_e2e_device_layer.py` | drift/reclaim + steady-state idempotency, on a cluster |
@@ -357,9 +369,9 @@ The non-obvious things this repo encodes, each of which cost a debugging session
 | `function/fn.py` | the Crossplane composite function (FunctionRunner: Fabric + Device) |
 | `function/engine.py` | pyavd pipeline wrapper; `render_fabric_design` is the function's core |
 | `function/push.py` | eAPI push protocol: the provider-http `Request` builders |
-| `function/xr.py` | fold an Ansible example into a `Fabric` document (block union + defaults push-down) |
-| `function/ansible_inputs.py` | rebuild `all_inputs` from an Ansible example (inventory + group_vars merge) |
-| `function/verify_example.py`, `verify_xr.py` | golden-diff harnesses (`avd-verify`, `avd-verify-xr`) |
+| `function/kinds.py` | the input-kind model: `Input`, `resolve`, and which kind a key belongs to |
+| `function/ansible_cli.py` | Ansible asked rather than reimplemented (dev-only; the runtime never imports it) |
+| `function/migrate.py` | an AVD inventory -> `Fabric` + input XRs (`avd-migrate`) |
 | `apis/fabric/`, `apis/device/` | XRD + Composition for each layer |
 | `apis/crossplane.yaml` | Configuration package metadata — `apis/` is that package's root |
 | `dev/` | `Function` manifests for local use (kind install, `crossplane render`); outside `apis/` so the Configuration build needs no exclusions |

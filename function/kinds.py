@@ -9,8 +9,8 @@ saying which devices see it. Per device, the inputs that apply are layered in
 
 **Nothing is merged.** Two NodeSets carrying the same node-type key never meet,
 because no device sees both: in a dual-DC fabric a DC1 leaf sees DC1's
-``l3leaf.defaults`` and a DC2 leaf sees DC2's. That is why this path needs
-neither a fabric-wide document nor the fold in :mod:`function.xr`.
+``l3leaf.defaults`` and a DC2 leaf sees DC2's. So there is no fabric-wide
+document to assemble and no conflict to resolve.
 
 Two things are separate that look like one:
 
@@ -22,15 +22,16 @@ Two things are separate that look like one:
   names four devices but is visible to every device of that DC.
 
 Measured against AVD's own corpus: the hostvars this produces are byte-identical
-to faithfully reproduced Ansible for all 8 bundled examples and every eos_designs
-molecule scenario -- 25 inventories, up to 501 devices. See
-:mod:`function.verify_kinds`.
+to what **Ansible itself** reports -- all 8 bundled examples and 19 molecule
+scenarios, up to 501 devices in one play. :mod:`function.migrate` builds the
+inputs and :mod:`function.ansible_cli` supplies the reference.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 KINDS = ("NodeSet", "NetworkServiceSet", "ConnectedEndpointSet", "SettingSet")
@@ -68,29 +69,130 @@ def hosts_in_blocks(design: dict) -> set[str]:
     return hosts
 
 
-def classify(design: dict) -> str:
-    """Which kind a fragment belongs to.
+@lru_cache(maxsize=1)
+def _default_vocabulary() -> "Vocabulary":
+    """The dynamic key names AVD invents when a document says nothing.
 
-    Advisory: the kinds exist for ownership (RBAC is granted per kind), not as a
-    partition the schema could enforce -- eos_designs' top-level key names come
-    from its own content, so no OpenAPI schema can describe them.
+    Read from pyavd's own public schema rather than copied into a literal: the
+    three generators ship defaults (13 node types, 12 endpoint kinds, `tenants`),
+    and a hand-kept copy goes stale silently. It already had -- `cameras` was
+    added upstream and the literal this replaces never grew it.
     """
-    if any(is_node_block(v) for v in design.values()):
+    from pyavd.api.schemas import AVDDesign
+
+    design = AVDDesign()
+    return Vocabulary(
+        node_types=frozenset(e.key for e in design.node_type_keys),
+        network_services=frozenset(e.name for e in design.network_services_keys),
+        connected_endpoints=frozenset(e.key for e in design.connected_endpoints_keys),
+    )
+
+
+@dataclass(frozen=True)
+class Vocabulary:
+    """The top-level key names in force for a document.
+
+    eos_designs generates key names from its own content -- `node_type_keys`,
+    `network_services_keys` and `connected_endpoints_keys` each name a family of
+    top-level keys. So no static map can classify every key, and this is that
+    map made per document instead: AVD's defaults, extended by whatever
+    generators the document carries.
+    """
+
+    node_types: frozenset[str]
+    network_services: frozenset[str]
+    connected_endpoints: frozenset[str]
+
+    @classmethod
+    def default(cls) -> "Vocabulary":
+        return _default_vocabulary()
+
+    def extend(self, design: dict) -> "Vocabulary":
+        """Add the key names this document's own generators declare."""
+
+        def named(source: str, field_name: str) -> frozenset[str]:
+            entries = design.get(source)
+            if not isinstance(entries, list):
+                return frozenset()
+            return frozenset(
+                str(e[field_name]) for e in entries
+                if isinstance(e, dict) and e.get(field_name)
+            )
+
+        return Vocabulary(
+            node_types=self.node_types | named("node_type_keys", "key")
+            | named("custom_node_type_keys", "key"),
+            network_services=self.network_services | named("network_services_keys", "name"),
+            connected_endpoints=self.connected_endpoints
+            | named("connected_endpoints_keys", "key")
+            | named("custom_connected_endpoints_keys", "key"),
+        )
+
+
+# The keys eos_designs names itself that are *not* settings. Everything else in
+# its schema is, so only the exceptions are listed -- and `test_categories`
+# checks each one against `documentation_options.table` in AVD's own schema, so
+# an upstream recategorisation fails the suite instead of drifting.
+_NODE_SET_KEYS = frozenset({
+    "type",                    # table: type-setting -- the device's node type
+    "node_type_keys",          # table: node-type-keys -- names the node families
+    "custom_node_type_keys",
+    "l3_interface_profiles",   # table: node-type-l3-interfaces-configuration
+})
+_NETWORK_SERVICE_KEYS = frozenset({
+    "network_services",        # table: network-services
+    "network_services_keys",
+    "evpn_vlan_bundles",       # table: evpn-vlan-bundles
+    "l2vlan_profiles",         # table: network-services-l2vlans-settings
+    "mlag_ibgp_peering_vrfs",  # table: network-services-vrfs-settings
+})
+_CONNECTED_ENDPOINT_KEYS = frozenset({
+    "connected_endpoints_keys",           # table: connected-endpoints-keys
+    "custom_connected_endpoints_keys",
+    "default_connected_endpoints_description",
+    "default_connected_endpoints_port_channel_description",
+    "default_network_ports_description",
+    "default_network_ports_port_channel_description",
+    # AVD tags neither of these; they are endpoint content by their own reading
+    # and this repo places them here. Nothing upstream contradicts it.
+    "port_profiles",
+    "network_ports",
+})
+
+
+def kind_of(key: str, value: Any, vocabulary: "Vocabulary | None" = None) -> str:
+    """Which kind one top-level key belongs to."""
+    vocabulary = vocabulary or Vocabulary.default()
+    if key in vocabulary.node_types or key in _NODE_SET_KEYS or is_node_block(value):
         return "NodeSet"
-    # Both spellings. AVD 6.x reads a native `network_services` list as well as
-    # the dynamic keys named by `network_services_keys` (default `tenants`) --
-    # `shared_utils/filtered_tenants.py` reads one after the other. A custom key
-    # name is only recognisable when `network_services_keys` travels with it.
-    if {"network_services", "tenants", "network_services_keys"} & design.keys():
+    if key in vocabulary.network_services or key in _NETWORK_SERVICE_KEYS:
         return "NetworkServiceSet"
-    if {
-        "servers", "firewalls", "routers", "load_balancers", "storage_arrays",
-        "cpes", "workstations", "access_points", "phones", "printers",
-        "generic_devices", "port_profiles", "network_ports",
-        "connected_endpoints_keys", "custom_connected_endpoints_keys",
-    } & design.keys():
+    if key in vocabulary.connected_endpoints or key in _CONNECTED_ENDPOINT_KEYS:
         return "ConnectedEndpointSet"
     return "SettingSet"
+
+
+def by_kind(design: dict, vocabulary: "Vocabulary | None" = None) -> dict[str, dict]:
+    """Partition a fragment into ``{kind: design}``, keys in their own order."""
+    vocabulary = (vocabulary or Vocabulary.default()).extend(design)
+    parts: dict[str, dict] = {}
+    for key, value in design.items():
+        parts.setdefault(kind_of(key, value, vocabulary), {})[key] = value
+    return {kind: parts[kind] for kind in KINDS if kind in parts}
+
+
+def classify(design: dict, vocabulary: "Vocabulary | None" = None) -> str:
+    """The kind a whole fragment belongs to: the one holding most of its keys.
+
+    Advisory. The kinds exist for ownership -- RBAC is granted per kind -- not
+    as a partition a schema could enforce, because eos_designs' top-level key
+    names come from its own content. A fragment spanning categories is split by
+    :func:`by_kind` rather than resolved by this.
+    """
+    parts = by_kind(design, vocabulary)
+    if not parts:
+        return "SettingSet"
+    return max(parts, key=lambda kind: len(parts[kind]))
 
 
 @dataclass
