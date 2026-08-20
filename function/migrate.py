@@ -294,10 +294,20 @@ def _inputs(fragments: list[Fragment], devices: frozenset[str],
     return [inp for _, inp in planned]
 
 
-def _fabric_name(root: Path, play: Play, many: bool) -> str:
+def _fabric_name(root: Path, play: Play, many: bool, taken: set[str]) -> str:
+    """A name per play, and never the same one twice.
+
+    ⚠ The pattern does not always tell two plays apart:
+    `eos_designs-twodc-5stage-clos` runs eos_designs twice over the same
+    `hosts: TWODC_5STAGE_CLOS`, so naming by pattern gave both fabrics one name —
+    and `--emit` wrote one file, the second silently overwriting the first.
+    """
     if not many:
-        return slug(root.name)
-    return slug(f"{root.name}-{play.pattern}") or slug(f"{root.name}-{play.index}")
+        return _unique(slug(root.name), taken)
+    base = slug(f"{root.name}-{play.pattern}") or slug(root.name)
+    if base in taken:
+        base = slug(f"{base}-{play.playbook.removesuffix('.yml')}-{play.index}")
+    return _unique(base, taken)
 
 
 def migrate(root: Path, collections: Path | None = None, inventory: Path | None = None,
@@ -325,6 +335,7 @@ def migrate(root: Path, collections: Path | None = None, inventory: Path | None 
 
     vocabulary = Vocabulary.default()
     fabrics: list[Fabric] = []
+    named: set[str] = set()
     for play in found:
         devices = frozenset(play.hosts)
         if not devices:
@@ -347,12 +358,13 @@ def migrate(root: Path, collections: Path | None = None, inventory: Path | None 
             )
 
         fabric = Fabric(
-            name=_fabric_name(root, play, len(found) > 1),
+            name=_fabric_name(root, play, len(found) > 1, named),
             devices=tuple(sorted(devices)),
             inputs=_inputs(fragments, devices, vocabulary),
             play=play,
         )
         _fabric_name_of(fabric, inv.hostvars)
+        _report_play_vars(fabric, root, play)
         # Only now, with the translation proven faithful. Dropping anything
         # before the comparison above would weaken the one gate this module has.
         _report_unsupported(fabric, drop_descriptions)
@@ -360,8 +372,64 @@ def migrate(root: Path, collections: Path | None = None, inventory: Path | None 
     return fabrics
 
 
+def _pooled_ids(design: dict) -> dict:
+    node_id = (design.get("fabric_numbering") or {}).get("node_id")
+    if isinstance(node_id, dict) and node_id.get("algorithm") == "pool_manager":
+        return node_id
+    return {}
+
+
+def _report_play_vars(fabric: Fabric, root: Path, play: Play) -> None:
+    """Variables set on the play itself, which no input XR carries.
+
+    ⚠ A source `ansible-inventory` cannot see, and one that changes the render:
+    `eos_designs-twodc-5stage-clos` runs eos_designs twice over the same hosts
+    and the second play sets `avd_digital_twin_mode: true`, producing a
+    different config into a different golden directory. Migrated without it, the
+    two fabrics come out identical and one of them is wrong.
+
+    **Reported, not carried.** Play vars outrank group and host vars, but the
+    oracle this migration checks itself against is per-host hostvars, which do
+    not include them -- so carrying them would silently weaken the one gate this
+    module has. Whoever migrates such a play adds the keys to an input by hand.
+    """
+    import yaml as _yaml
+
+    playbook = root / play.playbook
+    try:
+        document = _yaml.safe_load(playbook.read_text())
+    except (OSError, _yaml.YAMLError):
+        return
+    if not isinstance(document, list) or play.index > len(document):
+        return
+    variables = document[play.index - 1].get("vars") if isinstance(
+        document[play.index - 1], dict) else None
+    if isinstance(variables, dict) and variables:
+        fabric.notes.append(
+            f"{play.playbook} play #{play.index} sets {len(variables)} variable(s) on the "
+            f"play itself ({', '.join(sorted(variables))}); play vars outrank group and "
+            f"host vars and are NOT carried into any input"
+        )
+
+
 def _report_unsupported(fabric: Fabric, drop_descriptions: bool) -> None:
     """Note -- and optionally drop -- what pyavd will not honour."""
+    # State, not settings. An inventory already running `pool_manager` keeps its
+    # node IDs in a file AVD generated; this translates the *setting* and leaves
+    # the *assignments* behind. Applied to a fabric that is already deployed,
+    # that renumbers every device -- and a render reaches a switch as a full
+    # configuration replacement.
+    for inp in fabric.inputs:
+        pooled = _pooled_ids(inp.design)
+        if pooled:
+            where = pooled.get("pools_file") or "<root_dir>/intended/data/<fabric>-ids.yml"
+            fabric.notes.append(
+                f"node IDs come from a pool; its assignments live in {where} and do "
+                f"NOT travel with this migration. Seed them into the fabric "
+                f"(spec.nodeIdPool.seedConfigMapName) or every device is renumbered"
+            )
+            break
+
     if drop_descriptions:
         dropped = [
             f"{inp.name}.{path}"

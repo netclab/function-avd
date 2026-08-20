@@ -17,6 +17,7 @@ The gRPC entrypoint lives in ``main.py`` (function-template-python layout).
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime, timezone
 
 import pyavd
@@ -25,7 +26,7 @@ from crossplane.function import logging, resource, response
 from crossplane.function.proto.v1 import run_function_pb2 as fnv1
 from crossplane.function.proto.v1 import run_function_pb2_grpc as grpcv1
 
-from . import push
+from . import pools, push
 from .engine import (
     InputValidationError,
     device_roles_from_design,
@@ -62,6 +63,19 @@ def _normalize_numbers(obj):
     if isinstance(obj, list):
         return [_normalize_numbers(v) for v in obj]
     return obj
+
+
+def _dns_name(hostname: str) -> str:
+    """A hostname as a Kubernetes object name may spell it.
+
+    AVD hostnames are free text and two of its eight bundled examples --
+    `campus-fabric` and `l2ls-fabric` -- write them entirely in capitals. A
+    composed resource named after one is rejected outright: *"invalid name
+    ... Must be a valid RFC 1123 subdomain name"*, so the whole fabric fails to
+    compose. The hostname itself is untouched; only the object's name is spelled
+    this way.
+    """
+    return re.sub(r"[^a-z0-9-]+", "-", hostname.lower()).strip("-") or "device"
 
 
 def _now() -> str:
@@ -166,8 +180,47 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
             document["fabric_name"] = fabric_name
             all_inputs = {host: document for host in hostnames_from_design(document)}
 
+        # A fabric that asks for pool-assigned node IDs needs its assignments
+        # back before it renders, or every device is renumbered on every pass.
+        keeps_a_pool = pools.wanted_by(all_inputs)
+        pool = ""
         try:
-            structured_configs = render_structured_configs(all_inputs)
+            if keeps_a_pool:
+                previous = pools.observed_pool(req.observed.resources)
+                if not previous.strip():
+                    # Only before this fabric has a pool of its own. Once it has,
+                    # the seed is history and must not override it.
+                    state, seeded = pools.seed(req, rsp, spec, namespace)
+                    if state == "pending":
+                        # The normal first pass, exactly as for the named inputs.
+                        response.set_conditions(
+                            rsp,
+                            resource.Condition(
+                                typ="InputsResolved",
+                                status="False",
+                                reason="WaitingForSeed",
+                                message="waiting for the node-ID pool seed ConfigMap",
+                            ),
+                        )
+                        response.normal(rsp, "waiting for the node-ID pool seed")
+                        return
+                    if state == "missing":
+                        response.fatal(
+                            rsp,
+                            "spec.nodeIdPool.seedConfigMapName names a ConfigMap that "
+                            "does not exist; rendering without it would renumber every "
+                            "device",
+                        )
+                        return
+                    previous = seeded
+                with pools.pool_manager(all_inputs, previous) as (manager, pool_file):
+                    structured_configs = render_structured_configs(
+                        all_inputs, pool_manager=manager
+                    )
+                    manager.save_updated_pools()
+                    pool = pool_file.read_text() if pool_file.is_file() else previous
+            else:
+                structured_configs = render_structured_configs(all_inputs)
         except InputValidationError as err:
             resource.update_status(
                 rsp.desired.composite,
@@ -178,6 +231,15 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
         except Exception as err:  # noqa: BLE001 - surface any AVD/render failure to the XR
             response.fatal(rsp, f"AVD render failed: {type(err).__name__}: {err}")
             return
+
+        if keeps_a_pool:
+            # Composed after the render, so a failed render never overwrites a
+            # good pool with a partial one.
+            resource.update(
+                rsp.desired.resources[pools.RESOURCE_NAME],
+                pools.configmap(xr_name, namespace, fabric_name, pool),
+            )
+            rsp.desired.resources[pools.RESOURCE_NAME].ready = fnv1.READY_TRUE
 
         push_spec = spec.get("push") or {}
         if push_spec and not push_spec.get("credentialsSecretName"):
@@ -197,6 +259,20 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
             host: device_roles_from_design(hostvars).get(host) or hostvars.get("type", "")
             for host, hostvars in all_inputs.items()
         }
+        # Two hostnames that differ only in case, or only in a character a
+        # Kubernetes name cannot carry, would compose a single Device between
+        # them -- one config silently standing in for two switches.
+        spelled: dict[str, str] = {}
+        for hostname in sorted(structured_configs):
+            clash = spelled.setdefault(_dns_name(hostname), hostname)
+            if clash != hostname:
+                response.fatal(
+                    rsp,
+                    f"devices {clash!r} and {hostname!r} both need the object name "
+                    f"{_dns_name(hostname)!r}; rename one",
+                )
+                return
+
         observed_devices = req.observed.resources  # keyed by composition-resource-name (hostname)
         devices = []
         for hostname, structured_config in structured_configs.items():
@@ -207,7 +283,7 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
                 "apiVersion": API_VERSION,
                 "kind": "Device",
                 "metadata": {
-                    "name": resource.child_name(xr_name, hostname),
+                    "name": resource.child_name(xr_name, _dns_name(hostname)),
                     "namespace": namespace,
                     "labels": {
                         "avd.netclab.dev/fabric": fabric_name,

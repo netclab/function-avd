@@ -88,6 +88,35 @@ spec:
                     required:
                       - kind
                       - name
+                nodeIdPool:
+                  type: object
+                  description: >-
+                    Where this fabric's node IDs come from when the design sets
+                    fabric_numbering.node_id.algorithm to pool_manager. AVD then
+                    hands out IDs instead of reading them off each node, and
+                    keeps the assignments in a file. There is no such file in a
+                    cluster, so the Fabric composes a ConfigMap and reads it back
+                    on the next reconcile. Nothing here is needed for a fabric
+                    that numbers its nodes itself.
+                  properties:
+                    seedConfigMapName:
+                      type: string
+                      description: >-
+                        A ConfigMap holding assignments to start from, read once
+                        when this fabric has no pool of its own yet. It exists
+                        for a fabric that was already running elsewhere: AVD
+                        generated its IDs and they are in a file, and a fabric
+                        that starts over assigns different ones - which reaches
+                        every device as a full configuration replacement. Not
+                        needed for a new fabric, and ignored once the composed
+                        pool exists, so it seeds rather than overrides.
+                      minLength: 1
+                    seedKey:
+                      type: string
+                      description: >-
+                        Key within that ConfigMap. Defaults to the key the
+                        composed pool uses.
+                      minLength: 1
                 push:
                   type: object
                   description: >-
@@ -126,9 +155,14 @@ spec:
                       description: cEOS serves a self-signed cert; default true.
                   required:
                     - credentialsSecretName
+              # `design` is NOT required: a fabric may be assembled entirely from
+              # the inputs named in `spec.requires`, which is what `avd-migrate`
+              # emits and what `fn.py` has always accepted ("design or requires").
+              # Requiring it here made every migrated Fabric unapplyable, and no
+              # offline test could see it -- they drive RunFunction directly and
+              # never meet the API server's schema.
               required:
                 - fabricName
-                - design
             status:
               type: object
               properties:

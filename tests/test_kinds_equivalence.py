@@ -65,10 +65,14 @@ DEFERRED_RENDER_CORPUS = {
     "ansible_only": "custom ip_addressing template -- pyavd implements no Jinja templating",
     "evpn_underlay_ebgp_overlay_ebgp": "custom interface_descriptions templates -- "
                                        "pyavd implements no Jinja templating",
-    # Persistent mutable state: an ID pool must survive reconciliation or devices
-    # get new identifiers every pass. `pyavd.api.pool_manager` is public; what is
-    # missing is somewhere for a Fabric to keep the pool.
-    "eos_designs-twodc-5stage-clos": "fabric_numbering pool_manager -- makes a Fabric stateful",
+    # Two blockers, not one: `pool_manager` needs a pool that survives
+    # reconciliation, and the design also pins .j2 addressing. The *migrated*
+    # design always fails here, because it faithfully carries both.
+    # ⚠ Both are solved and proven in `tests/test_avd_compat.py`, which renders
+    # this scenario clean against AVD's golden with the pool supplied and the
+    # templates replaced by the class AVD's schema offers instead. What is left
+    # is somewhere for a Fabric to *keep* the pool.
+    "eos_designs-twodc-5stage-clos": "pool_manager + .j2 addressing -- see test_avd_compat",
     # Code, not data: a function image is immutable and must not load arbitrary
     # Python. ⚠ And this scenario is not a fabric -- 59 unrelated feature groups
     # under one play, with six different `fabric_name` values.

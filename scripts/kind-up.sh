@@ -135,9 +135,18 @@ kubectl --context "$CTX" wait --for=condition=Healthy function.pkg.crossplane.io
 # the package it was built from -- and the input kinds would be missing exactly
 # where a Fabric that names them is being tested.
 echo ">> install XRDs + Compositions (everything under apis/)"
-kubectl --context "$CTX" apply -f apis/*/xrd.yaml
+# One -f per file: `apply -f apis/*/xrd.yaml` reads only the first path the
+# glob expands to and passes the rest as positional args, which kubectl rejects.
+# It worked while there were two API directories and broke silently at six --
+# and nothing caught it, because `e2e on kind` is workflow_dispatch-only and
+# nothing else in CI runs this script.
+for manifest in apis/*/xrd.yaml; do
+  kubectl --context "$CTX" apply -f "$manifest"
+done
 kubectl --context "$CTX" wait --for=condition=Established xrd --all --timeout=60s
-kubectl --context "$CTX" apply -f apis/*/composition.yaml
+for manifest in apis/*/composition.yaml; do
+  kubectl --context "$CTX" apply -f "$manifest"
+done
 
 if [ "$WITH_NETCLAB" = "1" ]; then
   echo ">> provider-http ${PROVIDER_HTTP} (config push over eAPI)"
