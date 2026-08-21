@@ -85,19 +85,27 @@ def validate_all(all_inputs: dict[str, dict]) -> dict[str, list]:
 
 
 def render_structured_configs(
-    all_inputs: dict[str, dict], *, validate: bool = True
+    all_inputs: dict[str, dict], *, validate: bool = True, pool_manager: object = None
 ) -> dict[str, dict]:
     """Run facts + per-device structured config for the whole fabric.
 
     ``get_avd_facts`` is fabric-wide (needs every device at once); the structured
     config is then derived per device from those shared facts.
+
+    ``pool_manager`` is required only by a fabric setting
+    ``fabric_numbering.node_id.algorithm: pool_manager``, which asks AVD to
+    assign node IDs from a pool instead of reading them off each node. ⚠ The
+    pool is **a file** (`pyavd.api.pool_manager.PoolManager(output_dir)`), and
+    the assignments have to survive between runs or every device is renumbered —
+    so nothing composes one yet, and a Fabric that asks for it fails with AVD's
+    own message until a Fabric has somewhere to keep it.
     """
     if validate:
         violations = validate_all(all_inputs)
         if violations:
             raise InputValidationError(violations)
 
-    avd_facts = pyavd.get_avd_facts(all_inputs)
+    avd_facts = pyavd.get_avd_facts(all_inputs, pool_manager=pool_manager)
     return {
         hostname: pyavd.get_device_structured_config(
             hostname, inputs, avd_facts=avd_facts

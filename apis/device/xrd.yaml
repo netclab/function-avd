@@ -19,6 +19,9 @@ spec:
   names:
     kind: Device
     plural: devices
+    categories:
+    - crossplane
+    - netclab
   # Devices are composed by the Fabric function without an explicit composition
   # selector; pin the default so selection is deterministic.
   defaultCompositionRef:

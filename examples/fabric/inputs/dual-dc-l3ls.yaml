@@ -1,0 +1,540 @@
+apiVersion: avd.netclab.dev/v1alpha1
+kind: ConnectedEndpointSet
+metadata:
+  name: connected-endpoints
+spec:
+  design:
+    servers:
+    - adapters:
+      - endpoint_ports:
+        - PCI1
+        - PCI2
+        mode: trunk
+        native_vlan: 4092
+        port_channel:
+          description: PortChannel dc1-leaf1-server1
+          mode: active
+        spanning_tree_portfast: edge
+        switch_ports:
+        - Ethernet5
+        - Ethernet5
+        switches:
+        - dc1-leaf1a
+        - dc1-leaf1b
+        vlans: 11-12,21-22
+      - endpoint_ports:
+        - iLO
+        mode: access
+        spanning_tree_portfast: edge
+        switch_ports:
+        - Ethernet5
+        switches:
+        - dc1-leaf1c
+        vlans: 11
+      name: dc1-leaf1-server1
+    - adapters:
+      - endpoint_ports:
+        - PCI1
+        - PCI2
+        mode: trunk
+        native_vlan: 4092
+        port_channel:
+          mode: active
+        spanning_tree_portfast: edge
+        switch_ports:
+        - Ethernet5
+        - Ethernet5
+        switches:
+        - dc1-leaf2a
+        - dc1-leaf2b
+        vlans: 11-12,21-22
+      - endpoint_ports:
+        - iLO
+        mode: access
+        spanning_tree_portfast: edge
+        switch_ports:
+        - Ethernet5
+        switches:
+        - dc1-leaf2c
+        vlans: 11
+      name: dc1-leaf2-server1
+    - adapters:
+      - endpoint_ports:
+        - PCI1
+        - PCI2
+        mode: trunk
+        native_vlan: 4092
+        port_channel:
+          endpoint_port_channel: Bond1
+          mode: active
+        spanning_tree_portfast: edge
+        switch_ports:
+        - Ethernet5
+        - Ethernet5
+        switches:
+        - dc2-leaf1a
+        - dc2-leaf1b
+        vlans: 11-12,21-22
+      - endpoint_ports:
+        - iLO
+        mode: access
+        spanning_tree_portfast: edge
+        switch_ports:
+        - Ethernet5
+        switches:
+        - dc2-leaf1c
+        vlans: 11
+      name: dc2-leaf1-server1
+    - adapters:
+      - endpoint_ports:
+        - PCI1
+        - PCI2
+        mode: trunk
+        native_vlan: 4092
+        port_channel:
+          mode: active
+        spanning_tree_portfast: edge
+        switch_ports:
+        - Ethernet5
+        - Ethernet5
+        switches:
+        - dc2-leaf2a
+        - dc2-leaf2b
+        vlans: 11-12,21-22
+      - endpoint_ports:
+        - iLO
+        mode: access
+        spanning_tree_portfast: edge
+        switch_ports:
+        - Ethernet5
+        switches:
+        - dc2-leaf2c
+        vlans: 11
+      name: dc2-leaf2-server1
+  appliesTo:
+    nodeSets:
+    - dc1-l2-leafs
+    - dc1-l3-leafs
+    - dc2-l2-leafs
+    - dc2-l3-leafs
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: fabric
+spec:
+  design:
+    aaa_settings:
+      local_users:
+      - name: admin
+        no_password: true
+        privilege: 15
+        role: network-admin
+      - name: arista
+        privilege: 15
+        role: network-admin
+        sha512_password: $6$Enl0WfE32FthwyiJ$yTyGaEJ2uPKLU.F7314YtB7J1jrzrMi7ogXIRTEHQfLdLgKWWmr1UvNlZLN6AyuxET7G5aH3AI9OYRzxVTkB1.
+    bgp_peer_groups:
+      evpn_overlay_peers:
+        password: Q4fqtbqcZ7oQuKfuWtNGRQ==
+      ipv4_underlay_peers:
+        password: 7x4B4rnJhZB438m9+BrBfQ==
+      mlag_ipv4_underlay_peer:
+        password: 4b21pAdCvWeAqpcKDFMdWw==
+    default_interfaces:
+    - downlink_interfaces:
+      - Ethernet1-8
+      platforms:
+      - default
+      types:
+      - spine
+      uplink_interfaces:
+      - Ethernet1-2
+    - downlink_interfaces:
+      - Ethernet8
+      mlag_interfaces:
+      - Ethernet3-4
+      platforms:
+      - default
+      types:
+      - l3leaf
+      uplink_interfaces:
+      - Ethernet1-8
+    - platforms:
+      - default
+      types:
+      - l2leaf
+      uplink_interfaces:
+      - Ethernet1-2
+    eos_designs_documentation:
+      p2p_links_csv: true
+      topology_csv: true
+    fabric_name: FABRIC
+    l3_edge:
+      p2p_links:
+      - id: 1
+        interfaces:
+        - Ethernet6
+        - Ethernet6
+        nodes:
+        - dc1-leaf2a
+        - dc2-leaf2a
+        profile: DCI_profile
+      - id: 2
+        interfaces:
+        - Ethernet6
+        - Ethernet6
+        nodes:
+        - dc1-leaf2b
+        - dc2-leaf2b
+        profile: DCI_profile
+      p2p_links_ip_pools:
+      - ipv4_pool: 172.16.100.0/24
+        name: DCI_IP_pool
+      p2p_links_profiles:
+      - as:
+        - 65102
+        - 65202
+        include_in_underlay_protocol: true
+        ip_pool: DCI_IP_pool
+        name: DCI_profile
+    management_eapi:
+      enabled: true
+    overlay_routing_protocol: ebgp
+    underlay_routing_protocol: ebgp
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NetworkServiceSet
+metadata:
+  name: network-services
+spec:
+  design:
+    tenants:
+    - l2vlans:
+      - id: 3401
+        name: L2_VLAN3401
+      - id: 3402
+        name: L2_VLAN3402
+      mac_vrf_vni_base: 10000
+      name: TENANT1
+      vrfs:
+      - name: VRF10
+        svis:
+        - enabled: true
+          id: 11
+          ip_address_virtual: 10.10.11.1/24
+          name: VRF10_VLAN11
+        - enabled: true
+          id: 12
+          ip_address_virtual: 10.10.12.1/24
+          name: VRF10_VLAN12
+        vrf_vni: 10
+        vtep_diagnostic:
+          loopback: 10
+          loopback_ip_range: 10.255.10.0/27
+      - name: VRF11
+        svis:
+        - enabled: true
+          id: 21
+          ip_address_virtual: 10.10.21.1/24
+          name: VRF11_VLAN21
+        - enabled: true
+          id: 22
+          ip_address_virtual: 10.10.22.1/24
+          name: VRF11_VLAN22
+        vrf_vni: 11
+        vtep_diagnostic:
+          loopback: 11
+          loopback_ip_range: 10.255.11.0/27
+  appliesTo:
+    nodeSets:
+    - dc1-l2-leafs
+    - dc1-l3-leafs
+    - dc2-l2-leafs
+    - dc2-l3-leafs
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1
+spec:
+  design:
+    mgmt_gateway: 172.16.1.1
+  appliesTo:
+    nodeSets:
+    - dc1-l2-leafs
+    - dc1-l3-leafs
+    - dc1-spines
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc2
+spec:
+  design:
+    mgmt_gateway: 172.16.1.1
+  appliesTo:
+    nodeSets:
+    - dc2-l2-leafs
+    - dc2-l3-leafs
+    - dc2-spines
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-l2-leafs
+spec:
+  design:
+    l2leaf:
+      defaults:
+        platform: cEOSLab
+        spanning_tree_mode: mstp
+      node_groups:
+      - group: DC1_L2_LEAF1
+        nodes:
+        - id: 1
+          mgmt_ip: 172.16.1.151/24
+          name: dc1-leaf1c
+        uplink_switches:
+        - dc1-leaf1a
+        - dc1-leaf1b
+      - group: DC1_L2_LEAF2
+        nodes:
+        - id: 1
+          mgmt_ip: 172.16.1.152/24
+          name: dc1-leaf2c
+        uplink_switches:
+        - dc1-leaf2a
+        - dc1-leaf2b
+    type: l2leaf
+  declares:
+  - dc1-leaf1c
+  - dc1-leaf2c
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-l3-leafs
+spec:
+  design:
+    l3leaf:
+      defaults:
+        loopback_ipv4_offset: 2
+        loopback_ipv4_pool: 10.255.0.0/27
+        mlag_peer_ipv4_pool: 10.255.1.64/27
+        mlag_peer_l3_ipv4_pool: 10.255.1.96/27
+        platform: cEOSLab
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 4096
+        uplink_ipv4_pool: 10.255.255.0/26
+        uplink_switches:
+        - dc1-spine1
+        - dc1-spine2
+        virtual_router_mac_address: 00:1c:73:00:00:99
+        vtep_loopback_ipv4_pool: 10.255.1.0/27
+      node_groups:
+      - bgp_as: 65101
+        group: DC1_L3_LEAF1
+        nodes:
+        - id: 1
+          mgmt_ip: 172.16.1.101/24
+          name: dc1-leaf1a
+        - id: 2
+          mgmt_ip: 172.16.1.102/24
+          name: dc1-leaf1b
+      - bgp_as: 65102
+        evpn_gateway:
+          evpn_l2:
+            enabled: true
+          evpn_l3:
+            enabled: true
+            inter_domain: true
+        group: DC1_L3_LEAF2
+        nodes:
+        - evpn_gateway:
+            remote_peers:
+            - hostname: dc2-leaf2a
+          id: 3
+          mgmt_ip: 172.16.1.103/24
+          name: dc1-leaf2a
+        - evpn_gateway:
+            remote_peers:
+            - hostname: dc2-leaf2b
+          id: 4
+          mgmt_ip: 172.16.1.104/24
+          name: dc1-leaf2b
+    type: l3leaf
+  declares:
+  - dc1-leaf1a
+  - dc1-leaf1b
+  - dc1-leaf2a
+  - dc1-leaf2b
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-spines
+spec:
+  design:
+    spine:
+      defaults:
+        bgp_as: 65100
+        loopback_ipv4_pool: 10.255.0.0/27
+        platform: cEOSLab
+      nodes:
+      - id: 1
+        mgmt_ip: 172.16.1.11/24
+        name: dc1-spine1
+      - id: 2
+        mgmt_ip: 172.16.1.12/24
+        name: dc1-spine2
+    type: spine
+  declares:
+  - dc1-spine1
+  - dc1-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-l2-leafs
+spec:
+  design:
+    l2leaf:
+      defaults:
+        platform: cEOSLab
+        spanning_tree_mode: mstp
+      node_groups:
+      - group: DC2_L2_LEAF1
+        nodes:
+        - id: 1
+          mgmt_ip: 172.16.1.161/24
+          name: dc2-leaf1c
+        uplink_switches:
+        - dc2-leaf1a
+        - dc2-leaf1b
+      - group: DC2_L2_LEAF2
+        nodes:
+        - id: 1
+          mgmt_ip: 172.16.1.162/24
+          name: dc2-leaf2c
+        uplink_switches:
+        - dc2-leaf2a
+        - dc2-leaf2b
+    type: l2leaf
+  declares:
+  - dc2-leaf1c
+  - dc2-leaf2c
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-l3-leafs
+spec:
+  design:
+    l3leaf:
+      defaults:
+        loopback_ipv4_offset: 2
+        loopback_ipv4_pool: 10.255.128.0/27
+        mlag_peer_ipv4_pool: 10.255.129.64/27
+        mlag_peer_l3_ipv4_pool: 10.255.129.96/27
+        platform: cEOSLab
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 4096
+        uplink_ipv4_pool: 10.255.255.64/26
+        uplink_switches:
+        - dc2-spine1
+        - dc2-spine2
+        virtual_router_mac_address: 00:1c:73:00:00:99
+        vtep_loopback_ipv4_pool: 10.255.129.0/27
+      node_groups:
+      - bgp_as: 65201
+        group: DC2_L3_LEAF1
+        nodes:
+        - id: 1
+          mgmt_ip: 172.16.1.111/24
+          name: dc2-leaf1a
+        - id: 2
+          mgmt_ip: 172.16.1.112/24
+          name: dc2-leaf1b
+      - bgp_as: 65202
+        evpn_gateway:
+          evpn_l2:
+            enabled: true
+          evpn_l3:
+            enabled: true
+            inter_domain: true
+        group: DC2_L3_LEAF2
+        nodes:
+        - evpn_gateway:
+            remote_peers:
+            - hostname: dc1-leaf2a
+          id: 3
+          mgmt_ip: 172.16.1.113/24
+          name: dc2-leaf2a
+        - evpn_gateway:
+            remote_peers:
+            - hostname: dc1-leaf2b
+          id: 4
+          mgmt_ip: 172.16.1.114/24
+          name: dc2-leaf2b
+    type: l3leaf
+  declares:
+  - dc2-leaf1a
+  - dc2-leaf1b
+  - dc2-leaf2a
+  - dc2-leaf2b
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-spines
+spec:
+  design:
+    spine:
+      defaults:
+        bgp_as: 65200
+        loopback_ipv4_pool: 10.255.128.0/27
+        platform: cEOSLab
+      nodes:
+      - id: 1
+        mgmt_ip: 172.16.1.21/24
+        name: dc2-spine1
+      - id: 2
+        mgmt_ip: 172.16.1.22/24
+        name: dc2-spine2
+    type: spine
+  declares:
+  - dc2-spine1
+  - dc2-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: Fabric
+metadata:
+  name: dual-dc-l3ls
+spec:
+  fabricName: FABRIC
+  requires:
+  - kind: ConnectedEndpointSet
+    name: connected-endpoints
+  - kind: SettingSet
+    name: fabric
+  - kind: NetworkServiceSet
+    name: network-services
+  - kind: SettingSet
+    name: dc1
+  - kind: SettingSet
+    name: dc2
+  - kind: NodeSet
+    name: dc1-l2-leafs
+  - kind: NodeSet
+    name: dc1-l3-leafs
+  - kind: NodeSet
+    name: dc1-spines
+  - kind: NodeSet
+    name: dc2-l2-leafs
+  - kind: NodeSet
+    name: dc2-l3-leafs
+  - kind: NodeSet
+    name: dc2-spines

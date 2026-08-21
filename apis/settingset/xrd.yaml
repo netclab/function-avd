@@ -1,0 +1,103 @@
+# CompositeResourceDefinition for a set of settings at any scope.
+#
+# Everything that is not node-scoped and not a service: routing protocol choices,
+# `bgp_peer_groups`, `default_interfaces`, `aaa_settings`, `dns_settings`,
+# `ntp_settings`, `management_eapi`. Fabric-wide settings live on the Fabric
+# itself; this kind carries the same keys narrowed to part of the fabric, which
+# is what an AVD inventory expresses by putting them in a DC or role group.
+#
+# The key categories across the input kinds are a convention, not a partition the
+# schema could enforce -- eos_designs' top-level key names come from its own
+# content. What the kinds separate is ownership.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: settingsets.avd.netclab.dev
+spec:
+  scope: Namespaced
+  group: avd.netclab.dev
+  names:
+    kind: SettingSet
+    plural: settingsets
+    categories:
+    - crossplane
+    - netclab
+  defaultCompositionRef:
+    name: settingset-avd
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                design:
+                  type: object
+                  description: >-
+                    The settings this input contributes, in the shape of a
+                    group_vars file. Structurally open, like every input's design.
+                  x-kubernetes-preserve-unknown-fields: true
+                appliesTo:
+                  type: object
+                  description: >-
+                    Devices that see this input. Defaults to every device in the
+                    fabric.
+                  properties:
+                    all:
+                      type: boolean
+                    nodeSets:
+                      type: array
+                      description: Devices declared by the named NodeSets.
+                      items:
+                        type: string
+                    hosts:
+                      type: array
+                      description: Devices named directly.
+                      items:
+                        type: string
+                    matchHostnames:
+                      type: array
+                      description: >-
+                        Regular expressions matched against device names. Same
+                        semantics as AVD's own default_node_types, which matches
+                        hostnames this way: the pattern is anchored for you, so
+                        `dc1-leaf.*` matches the whole name. A pattern matching
+                        no device is an error, not an empty set -- a pattern is
+                        silent about both matching nothing and matching too much,
+                        and the render is pushed as a full config replacement.
+                      items:
+                        type: string
+              required:
+                - design
+            status:
+              type: object
+              properties:
+                keys:
+                  type: array
+                  description: Top-level eos_designs keys this input contributes.
+                  items:
+                    type: string
+                devices:
+                  type: array
+                  description: >-
+                    Devices this input resolved to. Reported rather than left to
+                    be inferred, because appliesTo may be a pattern and a pattern
+                    does not say what it matched.
+                  items:
+                    type: string
+                validation:
+                  type: object
+                  description: >-
+                    Result of validating this fragment. Reported here rather than
+                    on the Fabric so the team that owns this object sees its own
+                    error on its own object.
+                  properties:
+                    ok:
+                      type: boolean
+                    message:
+                      type: string
+              x-kubernetes-preserve-unknown-fields: true

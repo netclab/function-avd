@@ -101,7 +101,15 @@ done
 
 echo ">> build + push function image/xpkg (tag ${TAG})"
 docker build --provenance=false -t "${IMG}:${TAG}" .
-crossplane xpkg build --package-root=package --embed-runtime-image="${IMG}:${TAG}" -o "function-avd-${TAG}.xpkg"
+# --examples-root is stated even though `package/` is the package root: it
+# defaults to ./examples, which is not "no examples" but *everything* under
+# examples/ -- including examples/lab/topology.yaml, which is helm values with no
+# `kind` and fails the build with "Object 'Kind' is missing". --ignore is no help,
+# it does not reach --examples-root. CI and the release workflow have named it
+# since v0.1.4 failed on exactly this; this script was the build path that did
+# not, so a local bring-up broke the day the topology was committed.
+crossplane xpkg build --package-root=package --examples-root=examples/fabric \
+  --embed-runtime-image="${IMG}:${TAG}" -o "function-avd-${TAG}.xpkg"
 crossplane xpkg push -f "function-avd-${TAG}.xpkg" "localhost:${REG_PORT}/netclab/function-avd:${TAG}"
 
 echo ">> install Crossplane (chart ${XP_CHART})"
@@ -122,10 +130,23 @@ spec:
 EOF
 kubectl --context "$CTX" wait --for=condition=Healthy function.pkg.crossplane.io/netclab-function-avd --timeout=180s
 
-echo ">> install XRDs + Compositions (Fabric + Device)"
-kubectl --context "$CTX" apply -f apis/fabric/xrd.yaml -f apis/device/xrd.yaml
-kubectl --context "$CTX" wait --for=condition=Established xrd/fabrics.avd.netclab.dev xrd/devices.avd.netclab.dev --timeout=60s
-kubectl --context "$CTX" apply -f apis/fabric/composition.yaml -f apis/device/composition.yaml
+# Every API under apis/, not a named pair: the package root ships whatever is
+# there, so a script naming two of them installs a cluster that does not match
+# the package it was built from -- and the input kinds would be missing exactly
+# where a Fabric that names them is being tested.
+echo ">> install XRDs + Compositions (everything under apis/)"
+# One -f per file: `apply -f apis/*/xrd.yaml` reads only the first path the
+# glob expands to and passes the rest as positional args, which kubectl rejects.
+# It worked while there were two API directories and broke silently at six --
+# and nothing caught it, because `e2e on kind` is workflow_dispatch-only and
+# nothing else in CI runs this script.
+for manifest in apis/*/xrd.yaml; do
+  kubectl --context "$CTX" apply -f "$manifest"
+done
+kubectl --context "$CTX" wait --for=condition=Established xrd --all --timeout=60s
+for manifest in apis/*/composition.yaml; do
+  kubectl --context "$CTX" apply -f "$manifest"
+done
 
 if [ "$WITH_NETCLAB" = "1" ]; then
   echo ">> provider-http ${PROVIDER_HTTP} (config push over eAPI)"

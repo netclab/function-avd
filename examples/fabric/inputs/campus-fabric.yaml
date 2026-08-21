@@ -1,0 +1,526 @@
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1
+spec:
+  design:
+    aaa_settings:
+      authorization:
+        exec:
+          default: local
+      local_users:
+      - name: admin
+        no_password: true
+        privilege: 15
+        role: network-admin
+      - name: arista
+        privilege: 15
+        role: network-admin
+        sha512_password: $6$Enl0WfE32FthwyiJ$yTyGaEJ2uPKLU.F7314YtB7J1jrzrMi7ogXIRTEHQfLdLgKWWmr1UvNlZLN6AyuxET7G5aH3AI9OYRzxVTkB1.
+    dns_settings:
+      servers:
+      - ip_address: 8.8.4.4
+      - ip_address: 8.8.8.8
+    mgmt_gateway: 172.16.100.1
+    mgmt_interface_settings:
+      interface: Management0
+    ntp_settings:
+      server_vrf: use_mgmt_interface_vrf
+      servers:
+      - name: time.google.com
+      - name: pool.ntp.org
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-fabric
+spec:
+  design:
+    l2leaf:
+      defaults:
+        inband_mgmt_subnet: 10.10.10.0/24
+        inband_mgmt_vlan: 10
+        mlag_peer_ipv4_pool: 192.168.0.0/24
+        platform: cEOSLab
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 16384
+      node_groups:
+      - filter:
+          tags:
+          - '110'
+          - '120'
+          - '130'
+        group: IDF1
+        mlag: true
+        mlag_interfaces:
+        - Ethernet53
+        - Ethernet54
+        nodes:
+        - id: 3
+          mgmt_ip: 172.16.100.103/24
+          name: LEAF1A
+          uplink_switch_interfaces:
+          - Ethernet1
+          uplink_switches:
+          - SPINE1
+        - id: 4
+          mgmt_ip: 172.16.100.104/24
+          name: LEAF1B
+          uplink_switch_interfaces:
+          - Ethernet1
+          uplink_switches:
+          - SPINE2
+        uplink_interfaces:
+        - Ethernet51
+      - filter:
+          tags:
+          - '210'
+          - '220'
+          - '230'
+        group: IDF2
+        mlag: false
+        nodes:
+        - id: 5
+          mgmt_ip: 172.16.100.105/24
+          name: LEAF2A
+          uplink_interfaces:
+          - Ethernet1/1
+          - Ethernet1/3
+          uplink_switch_interfaces:
+          - Ethernet49/1
+          - Ethernet49/1
+          uplink_switches:
+          - SPINE1
+          - SPINE2
+        platform: 720XP
+      - filter:
+          tags:
+          - '310'
+          - '320'
+          - '330'
+        group: IDF3_AGG
+        mlag: true
+        mlag_interfaces:
+        - Ethernet98/3
+        - Ethernet98/4
+        nodes:
+        - id: 6
+          mgmt_ip: 172.16.100.106/24
+          name: LEAF3A
+          uplink_switch_interfaces:
+          - Ethernet50/1
+          - Ethernet50/1
+        - id: 7
+          mgmt_ip: 172.16.100.107/24
+          name: LEAF3B
+          uplink_switch_interfaces:
+          - Ethernet51/1
+          - Ethernet51/1
+        uplink_interfaces:
+        - Ethernet97/1
+        - Ethernet97/2
+        uplink_switches:
+        - SPINE1
+        - SPINE2
+      - group: IDF3_3C
+        mlag: false
+        nodes:
+        - id: 8
+          mgmt_ip: 172.16.100.108/24
+          name: LEAF3C
+          uplink_switch_interfaces:
+          - Ethernet97/3
+          - Ethernet97/3
+        uplink_interfaces:
+        - Ethernet97/1
+        - Ethernet97/2
+        uplink_switches:
+        - LEAF3A
+        - LEAF3B
+      - group: IDF3_3D
+        mlag: false
+        nodes:
+        - id: 9
+          mgmt_ip: 172.16.100.109/24
+          name: LEAF3D
+          uplink_switch_interfaces:
+          - Ethernet97/4
+          - Ethernet97/4
+        uplink_interfaces:
+        - Ethernet97/1
+        - Ethernet97/2
+        uplink_switches:
+        - LEAF3A
+        - LEAF3B
+      - group: IDF3_3E
+        mlag: false
+        nodes:
+        - id: 10
+          mgmt_ip: 172.16.100.110/24
+          name: LEAF3E
+          uplink_switch_interfaces:
+          - Ethernet98/1
+          - Ethernet98/1
+        uplink_interfaces:
+        - Ethernet97/1
+        - Ethernet97/2
+        uplink_switches:
+        - LEAF3A
+        - LEAF3B
+    l3spine:
+      defaults:
+        loopback_ipv4_pool: 172.16.1.0/24
+        mlag_interfaces:
+        - Ethernet55/1
+        - Ethernet56/1
+        mlag_peer_ipv4_pool: 192.168.0.0/24
+        mlag_peer_l3_ipv4_pool: 10.1.1.0/24
+        platform: cEOSLab
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 4096
+        virtual_router_mac_address: 00:1c:73:00:dc:01
+      node_groups:
+      - group: SPINES
+        nodes:
+        - id: 1
+          mgmt_ip: 172.16.100.101/24
+          name: SPINE1
+        - id: 2
+          mgmt_ip: 172.16.100.102/24
+          name: SPINE2
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1-fabric-settings
+spec:
+  design:
+    core_interfaces:
+      p2p_links:
+      - include_in_underlay_protocol: true
+        interfaces:
+        - Ethernet52/1
+        - Ethernet1/1
+        ip:
+        - 10.0.0.3/31
+        - 10.0.0.2/31
+        nodes:
+        - SPINE1
+        - WAN
+      - include_in_underlay_protocol: true
+        interfaces:
+        - Ethernet52/1
+        - Ethernet1/1
+        ip:
+        - 10.0.0.5/31
+        - 10.0.0.4/31
+        nodes:
+        - SPINE2
+        - WAN
+    fabric_name: DC1_FABRIC
+    management_eapi:
+      enabled: true
+    underlay_routing_protocol: ospf
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: ConnectedEndpointSet
+metadata:
+  name: dc1-network-ports
+spec:
+  design:
+    network_ports:
+    - description: IDF1 Standard Port
+      dot1x:
+        authentication_failure:
+          action: allow
+          allow_vlan: 130
+      mode: trunk phone
+      native_vlan: 110
+      phone_trunk_mode: untagged
+      phone_vlan: 120
+      profile: PP-DOT1X
+      switch_ports:
+      - Ethernet1-48
+      switches:
+      - LEAF1[AB]
+    - description: IDF2 Standard Port
+      dot1x:
+        authentication_failure:
+          action: allow
+          allow_vlan: 230
+      mode: trunk phone
+      native_vlan: 210
+      phone_trunk_mode: untagged
+      phone_vlan: 220
+      profile: PP-DOT1X
+      switch_ports:
+      - Ethernet3-7/1-48
+      switches:
+      - LEAF2A
+    - description: IDF3 Standard Port
+      dot1x:
+        authentication_failure:
+          action: allow
+          allow_vlan: 330
+      mode: trunk phone
+      native_vlan: 310
+      phone_trunk_mode: untagged
+      phone_vlan: 320
+      profile: PP-DOT1X
+      switch_ports:
+      - Ethernet1-96
+      switches:
+      - LEAF3[ABCDE]
+    port_profiles:
+    - dot1x:
+        host_mode:
+          mode: multi-host
+          multi_host_authenticated: true
+        mac_based_authentication:
+          enabled: true
+        pae:
+          mode: authenticator
+        port_control: auto
+        reauthentication: true
+        reauthorization_request_limit: 3
+        timeout:
+          reauth_period: server
+          tx_period: 3
+      mode: trunk phone
+      poe:
+        limit:
+          class: 4
+        link_down:
+          action: maintain
+        priority: critical
+        reboot:
+          action: maintain
+        shutdown:
+          action: power-off
+      profile: PP-DOT1X
+      spanning_tree_bpduguard: enabled
+      spanning_tree_portfast: edge
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NetworkServiceSet
+metadata:
+  name: dc1-network-services
+spec:
+  design:
+    tenants:
+    - name: MY_FABRIC
+      vrfs:
+      - name: default
+        svis:
+        - enabled: true
+          id: 110
+          ip_virtual_router_addresses:
+          - 10.1.10.1
+          name: IDF1-Data
+          nodes:
+          - ip_address: 10.1.10.2/23
+            node: SPINE1
+          - ip_address: 10.1.10.3/23
+            node: SPINE2
+          tags:
+          - '110'
+        - enabled: true
+          id: 120
+          ip_virtual_router_addresses:
+          - 10.1.20.1
+          name: IDF1-Voice
+          nodes:
+          - ip_address: 10.1.20.2/23
+            node: SPINE1
+          - ip_address: 10.1.20.3/23
+            node: SPINE2
+          tags:
+          - '120'
+        - enabled: true
+          id: 130
+          ip_virtual_router_addresses:
+          - 10.1.30.1
+          name: IDF1-Guest
+          nodes:
+          - ip_address: 10.1.30.2/23
+            node: SPINE1
+          - ip_address: 10.1.30.3/23
+            node: SPINE2
+          tags:
+          - '130'
+        - enabled: true
+          id: 210
+          ip_virtual_router_addresses:
+          - 10.2.10.1
+          name: IDF2-Data
+          nodes:
+          - ip_address: 10.2.10.2/23
+            node: SPINE1
+          - ip_address: 10.2.10.3/23
+            node: SPINE2
+          tags:
+          - '210'
+        - enabled: true
+          id: 220
+          ip_virtual_router_addresses:
+          - 10.2.20.1
+          name: IDF2-Voice
+          nodes:
+          - ip_address: 10.2.20.2/23
+            node: SPINE1
+          - ip_address: 10.2.20.3/23
+            node: SPINE2
+          tags:
+          - '220'
+        - enabled: true
+          id: 230
+          ip_virtual_router_addresses:
+          - 10.2.30.1
+          name: IDF2-Guest
+          nodes:
+          - ip_address: 10.2.30.2/23
+            node: SPINE1
+          - ip_address: 10.2.30.3/23
+            node: SPINE2
+          tags:
+          - '230'
+        - enabled: true
+          id: 310
+          ip_virtual_router_addresses:
+          - 10.3.10.1
+          name: IDF3-Data
+          nodes:
+          - ip_address: 10.3.10.2/23
+            node: SPINE1
+          - ip_address: 10.3.10.3/23
+            node: SPINE2
+          tags:
+          - '310'
+        - enabled: true
+          id: 320
+          ip_virtual_router_addresses:
+          - 10.3.20.1
+          name: IDF3-Voice
+          nodes:
+          - ip_address: 10.3.20.2/23
+            node: SPINE1
+          - ip_address: 10.3.20.3/23
+            node: SPINE2
+          tags:
+          - '320'
+        - enabled: true
+          id: 330
+          ip_virtual_router_addresses:
+          - 10.3.30.1
+          name: IDF3-Guest
+          nodes:
+          - ip_address: 10.3.30.2/23
+            node: SPINE1
+          - ip_address: 10.3.30.3/23
+            node: SPINE2
+          tags:
+          - '330'
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-leafs
+spec:
+  design:
+    type: l2leaf
+  declares:
+  - LEAF1A
+  - LEAF1B
+  - LEAF2A
+  - LEAF3A
+  - LEAF3B
+  - LEAF3C
+  - LEAF3D
+  - LEAF3E
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1-leafs-settings
+spec:
+  design:
+    aaa_settings:
+      authorization:
+        exec:
+          default: local
+      local_users:
+      - name: admin
+        no_password: true
+        privilege: 15
+        role: network-admin
+      - name: arista
+        privilege: 15
+        role: network-admin
+        sha512_password: $6$Enl0WfE32FthwyiJ$yTyGaEJ2uPKLU.F7314YtB7J1jrzrMi7ogXIRTEHQfLdLgKWWmr1UvNlZLN6AyuxET7G5aH3AI9OYRzxVTkB1.
+      radius:
+        servers:
+        - cleartext_key: super-secret-key
+          host: agni.arista.com
+    dot1x_settings:
+      enabled: true
+  appliesTo:
+    nodeSets:
+    - dc1-leafs
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-spines
+spec:
+  design:
+    type: l3spine
+  declares:
+  - SPINE1
+  - SPINE2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1-spines-settings
+spec:
+  design:
+    underlay_ospf_graceful_restart: false
+  appliesTo:
+    nodeSets:
+    - dc1-spines
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: Fabric
+metadata:
+  name: campus-fabric
+spec:
+  fabricName: DC1_FABRIC
+  requires:
+  - kind: SettingSet
+    name: dc1
+  - kind: NodeSet
+    name: dc1-fabric
+  - kind: SettingSet
+    name: dc1-fabric-settings
+  - kind: ConnectedEndpointSet
+    name: dc1-network-ports
+  - kind: NetworkServiceSet
+    name: dc1-network-services
+  - kind: NodeSet
+    name: dc1-leafs
+  - kind: SettingSet
+    name: dc1-leafs-settings
+  - kind: NodeSet
+    name: dc1-spines
+  - kind: SettingSet
+    name: dc1-spines-settings

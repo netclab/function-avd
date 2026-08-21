@@ -1,0 +1,106 @@
+# CompositeResourceDefinition for what connects to the fabric.
+#
+# Carries `connected_endpoints_keys.key` lists -- `servers`, `firewalls` and the
+# rest -- plus `port_profiles` and `network_ports`. Its own kind for the same
+# reason as NetworkServiceSet: whoever attaches servers is rarely whoever owns
+# the fabric, and RBAC is granted per kind.
+#
+# Named ConnectedEndpointSet, not Endpoints: `Endpoints` is a core/v1 kind, so
+# `kubectl get endpoints` would be ambiguous. The `Set` suffix is the family's --
+# every input kind is a set of design entries of one category, carrying a scope --
+# and it keeps the kind singular, so `connectedendpointset` and
+# `connectedendpointsets` say different things the way `nodeset` does.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: connectedendpointsets.avd.netclab.dev
+spec:
+  scope: Namespaced
+  group: avd.netclab.dev
+  names:
+    kind: ConnectedEndpointSet
+    plural: connectedendpointsets
+    categories:
+    - crossplane
+    - netclab
+  defaultCompositionRef:
+    name: connectedendpointset-avd
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                design:
+                  type: object
+                  description: >-
+                    The endpoints this input contributes. Structurally open:
+                    the top-level key names come from connected_endpoints_keys,
+                    so they are decided by the document's own content and no
+                    OpenAPI schema can describe them.
+                  x-kubernetes-preserve-unknown-fields: true
+                appliesTo:
+                  type: object
+                  description: >-
+                    Devices that see this input. Defaults to every device in the
+                    fabric.
+                  properties:
+                    all:
+                      type: boolean
+                    nodeSets:
+                      type: array
+                      description: Devices declared by the named NodeSets.
+                      items:
+                        type: string
+                    hosts:
+                      type: array
+                      description: Devices named directly.
+                      items:
+                        type: string
+                    matchHostnames:
+                      type: array
+                      description: >-
+                        Regular expressions matched against device names. Same
+                        semantics as AVD's own default_node_types, which matches
+                        hostnames this way: the pattern is anchored for you, so
+                        `dc1-leaf.*` matches the whole name. A pattern matching
+                        no device is an error, not an empty set -- a pattern is
+                        silent about both matching nothing and matching too much,
+                        and the render is pushed as a full config replacement.
+                      items:
+                        type: string
+              required:
+                - design
+            status:
+              type: object
+              properties:
+                keys:
+                  type: array
+                  description: Top-level eos_designs keys this input contributes.
+                  items:
+                    type: string
+                devices:
+                  type: array
+                  description: >-
+                    Devices this input resolved to. Reported rather than left to
+                    be inferred, because appliesTo may be a pattern and a pattern
+                    does not say what it matched.
+                  items:
+                    type: string
+                validation:
+                  type: object
+                  description: >-
+                    Result of validating this fragment. Reported here rather than
+                    on the Fabric so the team that owns this object sees its own
+                    error on its own object.
+                  properties:
+                    ok:
+                      type: boolean
+                    message:
+                      type: string
+              x-kubernetes-preserve-unknown-fields: true

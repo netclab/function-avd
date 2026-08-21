@@ -1,0 +1,279 @@
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: fabric
+spec:
+  design:
+    aaa_settings:
+      authentication:
+        policies:
+          local:
+            allow_nopassword: true
+      authorization:
+        exec:
+          default: local
+      local_users:
+      - name: admin
+        no_password: true
+        privilege: 15
+        role: network-admin
+      - name: arista
+        privilege: 15
+        role: network-admin
+        sha512_password: $6$Enl0WfE32FthwyiJ$yTyGaEJ2uPKLU.F7314YtB7J1jrzrMi7ogXIRTEHQfLdLgKWWmr1UvNlZLN6AyuxET7G5aH3AI9OYRzxVTkB1.
+    dns_settings:
+      servers:
+      - ip_address: 8.8.4.4
+      - ip_address: 8.8.8.8
+    eos_designs_documentation:
+      connected_endpoints: true
+    fabric_name: DC1
+    ntp_settings:
+      server_vrf: use_mgmt_interface_vrf
+      servers:
+      - name: time.google.com
+      - name: pool.ntp.org
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1
+spec:
+  design:
+    management_eapi:
+      enabled: true
+    mgmt_gateway: 172.16.100.1
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: ConnectedEndpointSet
+metadata:
+  name: dc1-endpoints
+spec:
+  design:
+    connected_endpoints_keys:
+    - key: servers
+      type: server
+    - key: firewalls
+      type: firewall
+    - key: routers
+      type: router
+    firewalls:
+    - adapters:
+      - endpoint_ports:
+        - Eth1
+        - Eth2
+        port_channel:
+          mode: active
+        profile: PP-FIREWALL
+        switch_ports:
+        - Ethernet5
+        - Ethernet5
+        switches:
+        - SPINE1
+        - SPINE2
+      name: FIREWALL
+    port_profiles:
+    - profile: PP-DEFAULTS
+      spanning_tree_portfast: edge
+    - mode: access
+      parent_profile: PP-DEFAULTS
+      profile: PP-BLUE
+      vlans: '10'
+    - mode: access
+      parent_profile: PP-DEFAULTS
+      profile: PP-GREEN
+      vlans: '20'
+    - mode: access
+      parent_profile: PP-DEFAULTS
+      profile: PP-ORANGE
+      vlans: '30'
+    - mode: trunk
+      profile: PP-FIREWALL
+      vlans: 10,20,30
+    servers:
+    - adapters:
+      - endpoint_ports:
+        - Eth1
+        profile: PP-BLUE
+        switch_ports:
+        - Ethernet3
+        switches:
+        - LEAF1
+      name: HostA
+      rack: POD1
+    - adapters:
+      - endpoint_ports:
+        - Eth1
+        profile: PP-GREEN
+        switch_ports:
+        - Ethernet3
+        switches:
+        - LEAF2
+      name: HostB
+      rack: POD1
+    - adapters:
+      - endpoint_ports:
+        - Eth1
+        profile: PP-BLUE
+        switch_ports:
+        - Ethernet3
+        switches:
+        - LEAF3
+      name: HostC
+      rack: POD2
+    - adapters:
+      - endpoint_ports:
+        - Eth1
+        profile: PP-ORANGE
+        switch_ports:
+        - Ethernet3
+        switches:
+        - LEAF4
+      name: Host2
+      rack: POD2
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NetworkServiceSet
+metadata:
+  name: dc1-network-services
+spec:
+  design:
+    tenants:
+    - l2vlans:
+      - id: 10
+        name: BLUE-NET
+        tags:
+        - bluezone
+      - id: 20
+        name: GREEN-NET
+        tags:
+        - greenzone
+      - id: 30
+        name: ORANGE-NET
+        tags:
+        - orangezone
+      name: MY_FABRIC
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-leafs
+spec:
+  design:
+    l2leaf:
+      defaults:
+        mlag_interfaces:
+        - Ethernet47
+        - Ethernet48
+        mlag_peer_ipv4_pool: 192.168.0.0/24
+        platform: cEOSLab
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 16384
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        uplink_switches:
+        - SPINE1
+        - SPINE2
+      node_groups:
+      - filter:
+          tags:
+          - bluezone
+          - greenzone
+        group: RACK1
+        mlag: true
+        nodes:
+        - id: 1
+          mgmt_ip: 172.16.100.105/24
+          name: LEAF1
+          uplink_switch_interfaces:
+          - Ethernet1
+          - Ethernet1
+        - id: 2
+          mgmt_ip: 172.16.100.106/24
+          name: LEAF2
+          uplink_switch_interfaces:
+          - Ethernet2
+          - Ethernet2
+      - filter:
+          tags:
+          - bluezone
+          - orangezone
+        group: RACK2
+        mlag: true
+        nodes:
+        - id: 3
+          mgmt_ip: 172.16.100.107/24
+          name: LEAF3
+          uplink_switch_interfaces:
+          - Ethernet3
+          - Ethernet3
+        - id: 4
+          mgmt_ip: 172.16.100.108/24
+          name: LEAF4
+          uplink_switch_interfaces:
+          - Ethernet4
+          - Ethernet4
+    type: l2leaf
+  declares:
+  - LEAF1
+  - LEAF2
+  - LEAF3
+  - LEAF4
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-spines
+spec:
+  design:
+    l2spine:
+      defaults:
+        mlag_interfaces:
+        - Ethernet47
+        - Ethernet48
+        mlag_peer_ipv4_pool: 192.168.0.0/24
+        platform: cEOSLab
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 4096
+      node_groups:
+      - group: SPINES
+        nodes:
+        - id: 1
+          mgmt_ip: 172.16.100.101/24
+          name: SPINE1
+        - id: 2
+          mgmt_ip: 172.16.100.102/24
+          name: SPINE2
+    type: l2spine
+  declares:
+  - SPINE1
+  - SPINE2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: Fabric
+metadata:
+  name: l2ls-fabric
+spec:
+  fabricName: DC1
+  requires:
+  - kind: SettingSet
+    name: fabric
+  - kind: SettingSet
+    name: dc1
+  - kind: ConnectedEndpointSet
+    name: dc1-endpoints
+  - kind: NetworkServiceSet
+    name: dc1-network-services
+  - kind: NodeSet
+    name: dc1-leafs
+  - kind: NodeSet
+    name: dc1-spines

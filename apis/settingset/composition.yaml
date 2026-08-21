@@ -1,0 +1,16 @@
+# Composition for SettingSet: validate this fragment and report on its own status.
+# Uses the same function image as Fabric and Device, which dispatches on the
+# composite kind.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: settingset-avd
+spec:
+  compositeTypeRef:
+    apiVersion: avd.netclab.dev/v1alpha1
+    kind: SettingSet
+  mode: Pipeline
+  pipeline:
+    - step: validate-input
+      functionRef:
+        name: netclab-function-avd

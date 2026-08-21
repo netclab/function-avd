@@ -14,19 +14,27 @@ dependencies = [
 ]
 
 [project.scripts]
-avd-verify = "function.verify_example:main"
-avd-verify-xr = "function.verify_xr:main"
+avd-migrate = "function.migrate:main"
 avd-function = "function.main:main"
 avd-topology = "function.netclab_topology:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+# `ansible-core` is the migration harness's reference implementation of Ansible:
+# `function/ansible_cli.py` asks the CLI what an inventory resolves to instead of
+# reimplementing it. The runtime never imports it -- `fn.py` takes XRs and there
+# is no inventory in a cluster -- so it reaches neither the image nor the
+# published package. Keeping Ansible out of the *runtime* is the rule; keeping it
+# out of the *harness* only bought a second, wrong implementation of Ansible.
+dev = ["pytest>=8.0", "ansible-core>=2.18"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # e2e needs a live cluster, so it is opt-in: `uv run pytest -m e2e`.
-addopts = "-m 'not e2e'"
-markers = ["e2e: requires a cluster from scripts/kind-up.sh with a fabric applied"]
+addopts = "-m 'not e2e and not corpus'"
+markers = [
+    "e2e: requires a cluster from scripts/kind-up.sh with a fabric applied",
+    "corpus: the whole molecule corpus -- 501 devices in one play, 71 plays in one scenario",
+]
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]
