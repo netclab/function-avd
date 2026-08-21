@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
 
+from . import nulls
+
 KINDS = ("NodeSet", "NetworkServiceSet", "ConnectedEndpointSet", "SettingSet")
 
 
@@ -266,6 +268,13 @@ def resolve(inputs: list[Input]) -> dict[str, dict]:
     key, whole-key, exactly as Ansible resolves group_vars. An overwrite is
     therefore intentional -- it is what the fabric owner declared by ordering --
     and belongs on status as a warning, never as an error.
+
+    Explicit nulls come back here, once the layering is done: an input carries
+    them as :data:`nulls.MARKER`, because an API server prunes a real null out of
+    an open field. Restoring after the layering rather than before keeps the
+    marker comparable like any other value -- a later input overwriting a null
+    with a value, or the other way round, works because both are just values
+    until this point.
     """
     declared_by = {i.name: set(i.declares) for i in inputs if i.declares}
     devices: set[str] = set()
@@ -276,7 +285,7 @@ def resolve(inputs: list[Input]) -> dict[str, dict]:
     for inp in inputs:
         for host in inp.scope(declared_by, devices):
             out[host].update(inp.design)
-    return out
+    return {host: nulls.restored(document) for host, document in out.items()}
 
 
 def unmatched_patterns(inputs: list[Input]) -> list[tuple[str, str]]:

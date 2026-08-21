@@ -36,22 +36,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-pytestmark = [
-    pytest.mark.e2e,
-    # ⚠ RED, knowingly, and recorded rather than hidden. Both assertions below
-    # hold offline -- `tests/test_avd_compat.py` renders this scenario 26 of 26
-    # clean against the same golden -- and fail on a cluster with 12 differences,
-    # every one a `service_profile` key present in ours and absent in the golden,
-    # on the P2P links between super-spines.
-    #
-    # Not diagnosed. The lead is that the scenario's two fabrics share 47 of 48
-    # input XR names while their emitted contents differ, so one apply can
-    # overwrite the other's inputs. See "OPEN -- twodc renders 12 differences on
-    # a cluster and 0 offline" in .claude/STATE.md.
-    #
-    # strict, so the day it starts passing this fails and says to drop the mark.
-    pytest.mark.xfail(strict=True, reason="twodc: 12 service_profile diffs on a cluster, 0 offline"),
-]
+pytestmark = [pytest.mark.e2e]
 
 CTX = os.getenv("AVD_KUBE_CONTEXT", "kind-avd")
 NS = "twodc"
@@ -206,11 +191,14 @@ def test_the_fabric_kept_the_seeded_assignments(fabric: str) -> None:
     """The pool is composed from the seed, not started over beside it."""
     from function import pools
 
+    # ⚠ Not `avd.netclab.dev/fabric`: that label is on all 27 ConfigMaps this
+    # fabric composes -- 26 device renders and the pool -- so selecting on it and
+    # taking the first match reads an `eos.cfg`. The pool says what it is.
     name = _kubectl(
-        "get", "cm", "-l", "avd.netclab.dev/fabric=TWODC_5STAGE_CLOS",
+        "get", "cm", "-l", "avd.netclab.dev/artifact=node-id-pool",
         "-o", "jsonpath={.items[*].metadata.name}",
     ).split()
-    assert name, "the fabric composed no pool"
+    assert len(name) == 1, f"expected one pool, found {len(name)}"
 
     body = yaml.safe_load(
         _kubectl("get", "cm", name[0], "-o", rf"jsonpath={{.data.{pools.DATA_KEY.replace('.', chr(92) + '.')}}}")

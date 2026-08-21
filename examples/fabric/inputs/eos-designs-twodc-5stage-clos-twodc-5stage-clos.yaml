@@ -1,0 +1,1859 @@
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: all
+spec:
+  design:
+    root_dir: /home/student/function-avd/avd/ansible_collections/arista/avd/extensions/molecule/eos_designs-twodc-5stage-clos
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: ConnectedEndpointSet
+metadata:
+  name: servers-endpoints
+spec:
+  design:
+    port_profiles:
+    - parent_profile: TENANT_A
+      port_channel:
+        raw_eos_cli: 'comment
+
+          Comment created from raw_eos_cli under port_channel on profile NESTED_TENANT_A
+
+          EOF
+
+          '
+      profile: NESTED_TENANT_A
+      raw_eos_cli: 'comment
+
+        Comment created from raw_eos_cli under profile NESTED_TENANT_A
+
+        EOF
+
+        '
+    - mode: access
+      profile: TENANT_A
+      qos_profile: foo
+      raw_eos_cli: 'comment
+
+        Comment created from raw_eos_cli under profile TENANT_A
+
+        EOF
+
+        '
+      vlans: '110'
+    servers:
+    - adapters:
+      - endpoint_ports:
+        - Eth1
+        - Eth2
+        port_channel:
+          description: PortChannel
+          enabled: true
+          mode: active
+        profile: TENANT_A
+        qos_profile: bar
+        switch_ports:
+        - Ethernet16
+        - Ethernet16
+        switches:
+        - DC1.POD1.LEAF2A
+        - DC1-POD1-LEAF2B
+      - endpoint_ports:
+        - Eth3
+        - Eth4
+        port_channel:
+          description: PortChannel
+          enabled: true
+          mode: active
+          structured_config:
+            description: Set using structured_config on server adapter port-channel
+        profile: TENANT_A
+        raw_eos_cli: 'comment
+
+          Comment created from raw_eos_cli under adapter for switch Eth17
+
+          EOF
+
+          '
+        structured_config:
+          description: Set using structured_config on server adapter
+        switch_ports:
+        - Ethernet17
+        - Ethernet17
+        switches:
+        - DC1.POD1.LEAF2A
+        - DC1-POD1-LEAF2B
+      - endpoint_ports:
+        - Eth5
+        - Eth6
+        port_channel:
+          description: PortChannel
+          enabled: true
+          mode: active
+        profile: NESTED_TENANT_A
+        switch_ports:
+        - Ethernet18
+        - Ethernet18
+        switches:
+        - DC1.POD1.LEAF2A
+        - DC1-POD1-LEAF2B
+      - endpoint_ports:
+        - Eth7
+        - Eth8
+        port_channel:
+          description: PortChannel
+          enabled: true
+          mode: active
+          raw_eos_cli: 'comment
+
+            Comment created from raw_eos_cli under adapter port_channel for switch
+            Po19
+
+            EOF
+
+            '
+        profile: NESTED_TENANT_A
+        switch_ports:
+        - Ethernet19
+        - Ethernet19
+        switches:
+        - DC1.POD1.LEAF2A
+        - DC1-POD1-LEAF2B
+      - endpoint_ports:
+        - Eth9
+        poe:
+          reboot:
+            action: maintain
+        switch_ports:
+        - Ethernet2
+        switches:
+        - DC1-POD1-L2LEAF1A
+      name: server-1
+      rack: RackB
+    - adapters:
+      - endpoint_ports:
+        - Eth1
+        - Eth2
+        profile: TENANT_A
+        switch_ports:
+        - Ethernet26
+        - Ethernet26
+        switches:
+        - DC1.POD1.LEAF2A
+        - DC1-POD1-LEAF2B
+      name: server-2
+      type: SpecialServer
+  appliesTo:
+    nodeSets:
+    - dc1-pod1-l2leaf1a
+    - dc1-pod1-l2leaf2a
+    - dc1-pod1-l2leaf2b
+    - dc1-pod1-leaf1a
+    - dc1-pod1-leaf1b
+    - dc1-pod1-leaf2a
+    - dc1-pod1-leaf2b
+    - dc1-pod2-leaf1a
+    - dc2-pod1-l2leaf1a
+    - dc2-pod1-l2leaf2a
+    - dc2-pod1-leaf1a
+    - dc2-pod1-leaf2a
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: servers-settings
+spec:
+  design:
+    connected_endpoints:
+    - adapters:
+      - endpoint_ports:
+        - Eth1
+        - Eth2
+        profile: TENANT_A
+        switch_ports:
+        - Ethernet27
+        - Ethernet27
+        switches:
+        - DC1.POD1.LEAF2A
+        - DC1-POD1-LEAF2B
+      name: server-3
+    - adapters:
+      - endpoint_ports:
+        - Eth5
+        - Eth6
+        port_channel:
+          description: PortChannel
+          enabled: true
+          mode: active
+        profile: NESTED_TENANT_A
+        switch_ports:
+        - Ethernet28
+        - Ethernet28
+        switches:
+        - DC1.POD1.LEAF2A
+        - DC1-POD1-LEAF2B
+      name: server-4
+      type: SpecialEndpoint
+  appliesTo:
+    nodeSets:
+    - dc1-pod1-l2leaf1a
+    - dc1-pod1-l2leaf2a
+    - dc1-pod1-l2leaf2b
+    - dc1-pod1-leaf1a
+    - dc1-pod1-leaf1b
+    - dc1-pod1-leaf2a
+    - dc1-pod1-leaf2b
+    - dc1-pod2-leaf1a
+    - dc2-pod1-l2leaf1a
+    - dc2-pod1-l2leaf2a
+    - dc2-pod1-leaf1a
+    - dc2-pod1-leaf2a
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NetworkServiceSet
+metadata:
+  name: tenants-networks-services
+spec:
+  design:
+    tenants:
+    - enable_mlag_ibgp_peering_vrfs: false
+      l2vlans:
+      - id: 2500
+        name: web-l2-vlan
+        tags:
+        - web
+        vni_override: 2500
+      - bgp:
+          raw_eos_cli: 'comment
+
+            comment created from raw_eos_cli under router bgp l2vlan 2600
+
+            EOF
+
+            '
+          structured_config:
+            redistribute_routes:
+            - router-mac system
+        id: 2600
+        name: web-l2-vlan-2
+        rt_override: 32600
+        tags:
+        - web
+      - id: 2601
+        name: l2vlan_with_no_vxlan
+        tags:
+        - web
+        vxlan: false
+      mac_vrf_id_base: 20000
+      mac_vrf_vni_base: 10000
+      name: Tenant_A
+      vrfs:
+      - bgp:
+          raw_eos_cli: 'comment
+
+            Comment created from raw_eos_cli under BGP for VRF Common_VRF
+
+            EOF
+
+            '
+        name: Common_VRF
+        raw_eos_cli: "interface Loopback1000\n  description Loopback created from\
+          \ raw_eos_cli under VRF Common_VRF\n"
+        structured_config:
+          domain_list:
+          - structured-config.set.under.vrf.common-vrf
+        svis:
+        - enabled: true
+          id: 110
+          ip_address_virtual: 10.1.10.1/24
+          name: Tenant_A_OP_Zone_1
+          nodes:
+          - node: DC1.POD1.LEAF2A
+            structured_config:
+              description: set from structured_config on svi for DC1.POD1.LEAF2A (was
+                Tenant_A_OP_Zone_1)
+          profile: TEST_PROFILE_STRUCT_CFG
+          rt_override: 99110
+          structured_config:
+            description: set from structured_config on svi (was Tenant_A_OP_Zone_1)
+          tags:
+          - opzone
+        - bgp:
+            raw_eos_cli: 'comment
+
+              comment created from raw_eos_cli under router bgp svi 111
+
+              EOF
+
+              '
+            structured_config:
+              redistribute_routes:
+              - router-mac system
+          id: 111
+          ip_address_virtual: 10.1.11.1/24
+          name: Tenant_A_OP_Zone_2
+          tags:
+          - opzone
+          vni_override: 50111
+        - enabled: true
+          id: 112
+          ip_address_virtual: 10.1.12.1/24
+          name: Tenant_A_OP_Zone_3
+          nodes:
+          - node: DC1-POD1-LEAF1A
+            raw_eos_cli: 'comment
+
+              Comment created from raw_eos_cli under SVI 112 in VRF Common_VRF overridden
+              on DC1-POD1-LEAF1A
+
+              EOF
+
+              '
+          profile: TEST_PARENT_PROFILE_STRUCT_CFG
+          raw_eos_cli: 'comment
+
+            Comment created from raw_eos_cli under SVI 112 in VRF Common_VRF
+
+            EOF
+
+            '
+          tags:
+          - opzone
+        - enabled: true
+          id: 113
+          ip_address_virtual: 10.10.13.1/24
+          name: SVI_with_no_vxlan
+          tags:
+          - opzone
+          vxlan: false
+        vrf_vni: 1025
+      - name: vrf_with_loopbacks_from_overlapping_pool
+        svis:
+        - enabled: true
+          id: 1100
+          ip_address_virtual: 10.100.100.1/24
+          name: test_svi
+          tags:
+          - opzone
+          - web
+          vxlan: false
+        vrf_vni: 1100
+        vtep_diagnostic:
+          loopback: 100
+          loopback_ip_range: 10.100.0.0/24
+      - name: vrf_with_loopbacks_from_pod_pools
+        svis:
+        - enabled: true
+          id: 1101
+          ip_address_virtual: 10.101.100.1/24
+          name: test_svi
+          tags:
+          - opzone
+          - web
+          vxlan: false
+        vrf_vni: 1101
+        vtep_diagnostic:
+          loopback: 101
+          loopback_ip_pools:
+          - ipv4_pool: 10.101.101.0-10.101.101.15, 10.101.101.16/28, 10.101.101.32-10.101.101.255
+            ipv6_pool: 2001:db8:1::-2001:db8:1:7fff::, 2001:db8:1:8000::/49
+            pod: DC1_POD1
+          - ipv4_pool: 10.101.102.0/24
+            pod: DC1_POD2
+          - ipv4_pool: 10.101.201.0/24
+            pod: DC2_POD1
+          - ipv6_pool: 2001:db8:2::/48
+            pod: DC2_POD2
+      - name: vrf_with_loopbacks_dc1_pod1_only
+        svis:
+        - enabled: true
+          id: 1102
+          ip_address_virtual: 10.102.100.1/24
+          name: test_svi
+          tags:
+          - opzone
+          - web
+          vxlan: false
+        vrf_vni: 1102
+        vtep_diagnostic:
+          loopback: 102
+          loopback_ip_pools:
+          - ipv4_pool: 10.102.101.0/24
+            pod: DC1_POD1
+  appliesTo:
+    nodeSets:
+    - dc1-pod1-l2leaf1a
+    - dc1-pod1-l2leaf2a
+    - dc1-pod1-l2leaf2b
+    - dc1-pod1-leaf1a
+    - dc1-pod1-leaf1b
+    - dc1-pod1-leaf2a
+    - dc1-pod1-leaf2b
+    - dc1-pod2-leaf1a
+    - dc2-pod1-l2leaf1a
+    - dc2-pod1-l2leaf2a
+    - dc2-pod1-leaf1a
+    - dc2-pod1-leaf2a
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: tenants-networks-settings
+spec:
+  design:
+    svi_profiles:
+    - bgp:
+        raw_eos_cli: 'comment
+
+          comment created from raw_eos_cli under router bgp svis inherited from svi
+          parent profile
+
+          EOF
+
+          '
+        structured_config:
+          redistribute_routes:
+          - router-mac system
+      profile: PARENT_PROFILE_STRUCT_CFG
+    - parent_profile: PARENT_PROFILE_STRUCT_CFG
+      profile: TEST_PARENT_PROFILE_STRUCT_CFG
+    - bgp:
+        raw_eos_cli: 'comment
+
+          comment created from raw_eos_cli under router bgp svis inherited from svi
+          profile
+
+          EOF
+
+          '
+        structured_config:
+          redistribute_routes:
+          - router-mac system
+      profile: TEST_PROFILE_STRUCT_CFG
+  appliesTo:
+    nodeSets:
+    - dc1-pod1-l2leaf1a
+    - dc1-pod1-l2leaf2a
+    - dc1-pod1-l2leaf2b
+    - dc1-pod1-leaf1a
+    - dc1-pod1-leaf1b
+    - dc1-pod1-leaf2a
+    - dc1-pod1-leaf2b
+    - dc1-pod2-leaf1a
+    - dc2-pod1-l2leaf1a
+    - dc2-pod1-l2leaf2a
+    - dc2-pod1-leaf1a
+    - dc2-pod1-leaf2a
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: twodc-5stage-clos
+spec:
+  design:
+    node_type_keys:
+    - default_evpn_role: server
+      ip_addressing:
+        python_module: function.avd_compat
+        python_class_name: AvdIpAddressingV2Spine
+      key: spine
+      type: spine
+    - connected_endpoints: true
+      default_evpn_role: client
+      key: l3leaf
+      mlag_support: true
+      network_services:
+        l2: true
+        l3: true
+      type: l3leaf
+      vtep: true
+    - connected_endpoints: true
+      key: l2leaf
+      mlag_support: true
+      network_services:
+        l2: true
+      type: l2leaf
+      underlay_router: false
+      uplink_type: port-channel
+    - key: super_spine
+      type: super-spine
+    - key: overlay_controller
+      type: overlay-controller
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: twodc-5stage-clos-settings
+spec:
+  design:
+    aaa_settings:
+      local_users:
+      - name: admin
+        no_password: true
+        privilege: 15
+        role: network-admin
+        sha512_password: $6$eJ5TvI8oru5i9e8G$R1X/SbtGTk9xoEHEBQASc7SC2nHYmi.crVgp2pXuCXwxsXEA81e4E0cXgQ6kX08fIeQzauqhv2kS.RGJFCon5/
+    custom_platform_settings:
+    - digital_twin:
+        platform: CloudEOS
+      feature_support:
+        poe: true
+      platforms:
+      - CUSTOM-PLATFORM
+    - digital_twin:
+        act_node_type: tools-server
+      platforms:
+      - TOOLS-SERVER
+      reload_delay:
+        mlag: 300
+        non_mlag: 330
+    custom_structured_configuration_list_merge: append
+    cv_topology:
+    - hostname: DC1-RS1
+      interfaces:
+      - name: Ethernet1
+        neighbor: DC1-SUPER-SPINE1
+        neighbor_interface: Ethernet5
+      - name: Ethernet2
+        neighbor: DC1-POD1-SPINE1
+        neighbor_interface: Ethernet6
+      - name: Ethernet3
+        neighbor: DC1-POD1-LEAF1A
+        neighbor_interface: Ethernet4
+      platform: vEOS-LAB
+    - hostname: DC1.POD1.LEAF2A
+      interfaces:
+      - name: Ethernet1
+        neighbor: DC1-POD1-SPINE1
+        neighbor_interface: Ethernet4
+      - name: Ethernet11
+        neighbor: DC1-POD1-SPINE1
+        neighbor_interface: Ethernet7
+      - name: Ethernet2
+        neighbor: DC1-POD1-SPINE2
+        neighbor_interface: Ethernet4
+      - name: Ethernet12
+        neighbor: DC1-POD1-SPINE2
+        neighbor_interface: Ethernet7
+      - name: Ethernet5
+        neighbor: DC1-POD1-LEAF2B
+        neighbor_interface: Ethernet5
+      - name: Ethernet6
+        neighbor: DC1-POD1-LEAF2B
+        neighbor_interface: Ethernet6
+      platform: vEOS-LAB
+    - hostname: DC1-POD1-LEAF2B
+      interfaces:
+      - name: Ethernet1
+        neighbor: DC1-POD1-SPINE1
+        neighbor_interface: Ethernet5
+      - name: Ethernet11
+        neighbor: DC1-POD1-SPINE1
+        neighbor_interface: Ethernet8
+      - name: Ethernet2
+        neighbor: DC1-POD1-SPINE2
+        neighbor_interface: Ethernet5
+      - name: Ethernet12
+        neighbor: DC1-POD1-SPINE2
+        neighbor_interface: Ethernet8
+      - name: Ethernet5
+        neighbor: DC1.POD1.LEAF2A
+        neighbor_interface: Ethernet5
+      - name: Ethernet6
+        neighbor: DC1.POD1.LEAF2A
+        neighbor_interface: Ethernet6
+      platform: vEOS-LAB
+    cv_topology_levels:
+    - level: 1
+      type: super-spine
+    - level: 2
+      type: spine
+    - level: 3
+      type: l3leaf
+    - level: 4
+      type: l2leaf
+    - level: 5
+      type: overlay-controller
+    eos_designs_documentation:
+      connected_endpoints: true
+      p2p_links_csv: true
+      topology_csv: true
+    evpn_ebgp_multihop: 5
+    evpn_overlay_bgp_rtc: true
+    fabric_name: TWODC_5STAGE_CLOS
+    fabric_numbering:
+      node_id:
+        algorithm: pool_manager
+        pools_file: intended/data/test-ids.yml
+    l3_edge:
+      p2p_links:
+      - as:
+        - 65100
+        - 65200
+        id: 1
+        interfaces:
+        - Ethernet6
+        - Ethernet4
+        ip_pool: pool-super-spine
+        macsec_profile: MACSEC_PROFILE
+        nodes:
+        - DC1-SUPER-SPINE1
+        - DC2-SUPER-SPINE1
+        profile: generic-profile
+        qos_profile: avd.netclab.dev/null
+      - as:
+        - 65100
+        - 65200
+        id: 2
+        interfaces:
+        - Ethernet6
+        - Ethernet4
+        ip_pool: pool-super-spine
+        mtu: 1500
+        nodes:
+        - DC1-SUPER-SPINE2
+        - DC2-SUPER-SPINE2
+        qos_profile: avd.netclab.dev/null
+      - as:
+        - 65120
+        - 65210
+        id: 10
+        interfaces:
+        - Ethernet5
+        - Ethernet5
+        ip_pool: pool-spine
+        mtu: 1500
+        nodes:
+        - DC1-POD2-SPINE1
+        - DC2-POD1-SPINE1
+        qos_profile: avd.netclab.dev/null
+      - as:
+        - 65112
+        - 65210
+        interfaces:
+        - Ethernet4
+        - Ethernet5
+        ip:
+        - 200.200.200.101/24
+        - 200.200.200.201/24
+        mtu: 1498
+        nodes:
+        - DC1-POD2-SPINE2
+        - DC2-POD1-SPINE2
+        profile: generic-profile
+        qos_profile: avd.netclab.dev/null
+      - as:
+        - '65112.100'
+        - 65211
+        interfaces:
+        - Ethernet7
+        - Ethernet6
+        ip:
+        - 100.100.100.101/24
+        - 100.100.100.201/24
+        mtu: 1500
+        nodes:
+        - DC1.POD1.LEAF2A
+        - DC2-POD1-LEAF1A
+        qos_profile: avd.netclab.dev/null
+      - as:
+        - 65120
+        - 65211
+        bfd: true
+        id: 20
+        interfaces:
+        - Ethernet7
+        - Ethernet7
+        ip_pool: pool-leaf
+        nodes:
+        - DC1-POD1-LEAF2B
+        - DC2-POD1-LEAF1A
+        profile: generic-profile
+        qos_profile: avd.netclab.dev/null
+      p2p_links_ip_pools:
+      - ipv4_pool: 11.1.0.0/24
+        name: pool-leaf
+      - ipv4_pool: 11.1.1.0/24
+        name: pool-spine
+      - ipv4_pool: 11.1.2.0/24
+        name: pool-super-spine
+      p2p_links_profiles:
+      - bfd: false
+        mtu: 1499
+        name: generic-profile
+        ptp:
+          enabled: true
+    mgmt_destination_networks:
+    - 0.0.0.0/0
+    mgmt_gateway: 192.168.1.254
+    p2p_uplinks_mtu: 1500
+    p2p_uplinks_qos_profile: QOS-PROFILE
+    platform_settings:
+    - digital_twin:
+        platform: vEOS-LAB
+      platforms:
+      - default
+      reload_delay:
+        mlag: 300
+        non_mlag: 330
+    - digital_twin:
+        act_node_type: veos
+      feature_support:
+        per_interface_mtu: false
+      platforms:
+      - vEOS-LAB
+      raw_eos_cli: "interface Loopback1111\n  description Loopback created from raw_eos_cli\
+        \ under platform_settings vEOS-LAB\n"
+      reload_delay:
+        mlag: 300
+        non_mlag: 330
+    - digital_twin:
+        act_node_type: cloudeos
+      platforms:
+      - CloudEOS
+    snmp_settings:
+      location: true
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1
+spec:
+  design:
+    overlay_controller:
+      defaults:
+        bgp_defaults:
+        - distance bgp 20 200 200
+        loopback_ipv4_pool: 172.16.10.0/24
+        max_uplink_switches: 4
+        uplink_bfd: true
+        uplink_ipv4_pool: 172.17.10.0/24
+      nodes:
+      - bgp_as: 65101
+        digital_twin:
+          mgmt_ip: 192.168.1.3/24
+        evpn_role: server
+        evpn_route_servers:
+        - DC2-RS1
+        - DC2-SUPER-SPINE1
+        - DC2-POD1-SPINE1
+        - DC2-POD1-LEAF1A
+        name: DC1-RS1
+      - bgp_as: 65102
+        evpn_role: server
+        evpn_route_servers:
+        - DC2-RS1
+        - DC2-SUPER-SPINE1
+        - DC2-POD1-SPINE1
+        - DC2-POD1-LEAF1A
+        mgmt_ip: 192.168.1.4/24
+        name: DC1-RS2
+        platform: vEOS-LAB
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        - Ethernet3
+        uplink_switch_interfaces:
+        - Ethernet5
+        - Ethernet4
+        - Ethernet3
+        uplink_switches:
+        - DC1-SUPER-SPINE2
+        - DC1-POD2-SPINE1
+        - DC1-POD2-LEAF1A
+    super_spine:
+      defaults:
+        bgp_as: 65100
+        bgp_defaults:
+        - distance bgp 20 200 200
+        loopback_ipv4_pool: 172.16.100.0/24
+        platform: vEOS-LAB
+      nodes:
+      - digital_twin:
+          mgmt_ip: 192.168.1.1/24
+        name: DC1-SUPER-SPINE1
+      - mgmt_ip: 192.168.1.2/24
+        name: DC1-SUPER-SPINE2
+  appliesTo:
+    nodeSets:
+    - dc1-pod1-l2leaf1a
+    - dc1-pod1-l2leaf2a
+    - dc1-pod1-l2leaf2b
+    - dc1-pod1-leaf1a
+    - dc1-pod1-leaf1b
+    - dc1-pod1-leaf2a
+    - dc1-pod1-leaf2b
+    - dc1-pod1-spine1
+    - dc1-pod1-spine2
+    - dc1-pod2-leaf1a
+    - dc1-pod2-spine1
+    - dc1-pod2-spine2
+    - dc1-rs1
+    - dc1-rs2
+    - dc1-super-spine1
+    - dc1-super-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1-settings
+spec:
+  design:
+    bgp_peer_groups:
+      evpn_overlay_peers:
+        password: q+VNViP5i4rVjW1cxFv2wA==
+      ipv4_underlay_peers:
+        password: AQQvKeimxJu+uGQ/yYvv9w==
+      mlag_ipv4_underlay_peer:
+        password: vnEaG8gMeQf3d3cN6PktXQ==
+    dc_name: DC1
+    evpn_import_pruning: true
+    evpn_prevent_readvertise_to_server: true
+  appliesTo:
+    nodeSets:
+    - dc1-pod1-l2leaf1a
+    - dc1-pod1-l2leaf2a
+    - dc1-pod1-l2leaf2b
+    - dc1-pod1-leaf1a
+    - dc1-pod1-leaf1b
+    - dc1-pod1-leaf2a
+    - dc1-pod1-leaf2b
+    - dc1-pod1-spine1
+    - dc1-pod1-spine2
+    - dc1-pod2-leaf1a
+    - dc1-pod2-spine1
+    - dc1-pod2-spine2
+    - dc1-rs1
+    - dc1-rs2
+    - dc1-super-spine1
+    - dc1-super-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2
+spec:
+  design:
+    overlay_controller:
+      defaults:
+        bgp_as: 65201
+        bgp_defaults:
+        - distance bgp 20 200 200
+        evpn_route_servers:
+        - DC1-RS1
+        - DC1-SUPER-SPINE1
+        - DC1-POD1-SPINE1
+        - DC1-POD1-LEAF1A
+        loopback_ipv4_pool: 172.16.20.0/24
+        max_uplink_switches: 4
+        platform: vEOS-LAB
+        uplink_bfd: false
+        uplink_ipv4_pool: 172.17.20.0/24
+        uplink_switches:
+        - DC2-SUPER-SPINE1
+        - DC2-SUPER-SPINE1
+      nodes:
+      - evpn_role: server
+        mgmt_ip: 192.168.1.18/24
+        name: DC2-RS1
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        uplink_switch_interfaces:
+        - Ethernet3
+        - Ethernet6
+      - evpn_role: none
+        mgmt_ip: 192.168.1.19/24
+        name: DC2-RS2
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        uplink_switch_interfaces:
+        - Ethernet5
+        - Ethernet7
+    super_spine:
+      defaults:
+        bgp_as: 65200
+        bgp_defaults:
+        - distance bgp 20 200 200
+        loopback_ipv4_pool: 172.16.200.0/24
+        platform: vEOS-LAB
+      nodes:
+      - evpn_role: server
+        evpn_route_servers:
+        - DC1-RS1
+        - DC1-SUPER-SPINE1
+        - DC1-POD1-SPINE1
+        - DC1-POD1-LEAF1A
+        mgmt_ip: 192.168.1.16/24
+        name: DC2-SUPER-SPINE1
+      - evpn_role: none
+        mgmt_ip: 192.168.1.17/24
+        name: DC2-SUPER-SPINE2
+  appliesTo:
+    nodeSets:
+    - dc2-pod1-l2leaf1a
+    - dc2-pod1-l2leaf2a
+    - dc2-pod1-leaf1a
+    - dc2-pod1-leaf2a
+    - dc2-pod1-spine1
+    - dc2-pod1-spine2
+    - dc2-rs1
+    - dc2-rs2
+    - dc2-super-spine1
+    - dc2-super-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc2-settings
+spec:
+  design:
+    dc_name: DC2
+    evpn_prevent_readvertise_to_server: false
+  appliesTo:
+    nodeSets:
+    - dc2-pod1-l2leaf1a
+    - dc2-pod1-l2leaf2a
+    - dc2-pod1-leaf1a
+    - dc2-pod1-leaf2a
+    - dc2-pod1-spine1
+    - dc2-pod1-spine2
+    - dc2-rs1
+    - dc2-rs2
+    - dc2-super-spine1
+    - dc2-super-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod1
+spec:
+  design:
+    l2leaf:
+      defaults:
+        digital_twin:
+          act_internet_access: true
+        inband_mgmt_description: L2LEAF_INBAND_MGMT
+        inband_mgmt_subnet: 172.21.110.0/24
+        inband_mgmt_vlan: 4085
+        inband_mgmt_vlan_name: L2LEAF_INBAND_MGMT
+        mlag_peer_ipv4_pool: 172.20.110.0/24
+        mlag_peer_l3_ipv4_pool: 172.19.110.0/24
+      node_groups:
+      - group: RACK2_SINGLE
+        mlag: false
+        nodes:
+        - digital_twin:
+            mgmt_ip: 192.168.1.10/24
+          mgmt_ip: 192.168.1.10/24
+          name: DC1-POD1-L2LEAF1A
+          platform: CUSTOM-PLATFORM
+          uplink_switch_interfaces:
+          - Ethernet3
+        platform: vEOS-LAB
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 8192
+        uplink_interfaces:
+        - Ethernet1
+        uplink_switches:
+        - DC1-POD1-LEAF1A
+      - group: RACK2_MLAG
+        mlag_interfaces:
+        - Ethernet3
+        - Ethernet4
+        nodes:
+        - digital_twin:
+            mgmt_ip: 192.168.1.11/24
+          mgmt_ip: 192.168.1.11/24
+          name: DC1-POD1-L2LEAF2A
+          platform: vEOS-LAB
+          uplink_switch_interfaces:
+          - Ethernet3
+          - Ethernet3
+        - mgmt_ip: 192.168.1.12/24
+          name: DC1-POD1-L2LEAF2B
+          platform: TOOLS-SERVER
+          raw_eos_cli: "interface Loopback1003\n  description Loopback created from\
+            \ raw_eos_cli under l2leaf node DC1-POD1-L2LEAF2B\n"
+          uplink_switch_interfaces:
+          - Ethernet4
+          - Ethernet4
+        raw_eos_cli: "interface Loopback1002\n  description Loopback created from\
+          \ raw_eos_cli under l2leaf node-group RACK2_MLAG\n"
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 8192
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        uplink_switches:
+        - DC1.POD1.LEAF2A
+        - DC1-POD1-LEAF2B
+    l3leaf:
+      defaults:
+        bgp_as: '65555'
+        bgp_defaults:
+        - distance bgp 20 200 200
+        inband_mgmt_description: L2LEAF_INBAND_MGMT
+        inband_mgmt_vlan_name: L2LEAF_INBAND_MGMT
+        loopback_ipv4_offset: 2
+        loopback_ipv4_pool: 172.16.110.0/24
+        mlag_peer_ipv4_pool: 172.20.110.0/24
+        mlag_peer_l3_ipv4_pool: 172.19.110.0/24
+        uplink_ipv4_pool: 172.17.110.0/24
+        uplink_macsec:
+          profile: MACSEC_PROFILE
+        uplink_ptp:
+          enable: true
+        virtual_router_mac_address: 00:1c:73:00:dc:01
+        vtep_loopback_ipv4_pool: 172.18.110.0/24
+      node_groups:
+      - bgp_as: '65111.100'
+        evpn_role: server
+        evpn_route_servers:
+        - DC2-RS1
+        - DC2-SUPER-SPINE1
+        - DC2-POD1-SPINE1
+        - DC2-POD1-LEAF1A
+        filter:
+          always_include_vrfs_in_tenants:
+          - all
+          tags: []
+          tenants: []
+        group: RACK1_SINGLE
+        mlag: false
+        nodes:
+        - digital_twin:
+            mgmt_ip: 192.168.1.7/24
+          name: DC1-POD1-LEAF1A
+          raw_eos_cli: "interface Loopback1002\n  description Loopback created from\
+            \ raw_eos_cli under node DC1-POD1-LEAF1A\n"
+          uplink_switch_interfaces:
+          - Ethernet3
+          - Ethernet3
+        - evpn_role: none
+          filter:
+            tags:
+            - all
+            tenants:
+            - all
+          mgmt_ip: 192.168.1.26/24
+          name: DC1-POD1-LEAF1B
+          uplink_switch_interfaces:
+          - Ethernet13
+          - Ethernet13
+          uplink_switches:
+          - DC1.POD1.LEAF2A
+          - DC1-POD1-LEAF2B
+          uplink_type: p2p-vrfs
+          vtep: false
+        platform: vEOS-LAB
+        raw_eos_cli: "interface Loopback1001\n  description Loopback created from\
+          \ raw_eos_cli under node-group RACK1_SINGLE\n"
+        spanning_tree_mode: none
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        uplink_switches:
+        - DC1-POD1-SPINE1
+        - DC1-POD1-SPINE2
+      - bgp_as: '65112.100'
+        evpn_route_servers:
+        - DC1-RS1
+        - DC1-SUPER-SPINE1
+        - DC1-POD1-SPINE1
+        - DC1-POD1-LEAF1A
+        group: RACK2_MLAG
+        mlag_dual_primary_detection: true
+        mlag_peer_l3_vlan: 4094
+        nodes:
+        - digital_twin:
+            mgmt_ip: 192.168.1.8/24
+          evpn_gateway:
+            evpn_l2:
+              enabled: false
+            evpn_l3:
+              enabled: true
+              inter_domain: true
+            remote_peers:
+            - hostname: DC1-POD2-LEAF1A
+          mgmt_ip: 192.168.1.8/16
+          name: DC1.POD1.LEAF2A
+          structured_config:
+            domain_list:
+            - structured-config.set.on.node
+        - evpn_gateway:
+            evpn_l2:
+              enabled: true
+            evpn_l3:
+              enabled: true
+              inter_domain: false
+            remote_peers:
+            - bgp_as: 1111
+              hostname: HOSTNAME_NOT_IN_ANSIBLE
+              ip_address: 1.1.1.1
+          mgmt_ip: 192.168.1.9/16
+          name: DC1-POD1-LEAF2B
+        raw_eos_cli: "interface Loopback1002\n  description Loopback created from\
+          \ raw_eos_cli under l3leaf node-group RACK2_MLAG\n"
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 4096
+    spine:
+      defaults:
+        bgp_as: '65110.100'
+        bgp_defaults:
+        - distance bgp 20 200 200
+        digital_twin:
+          act_internet_access: false
+          act_os_version: 4.33.1F
+        loopback_ipv4_pool: 172.16.110.0/24
+        max_uplink_switches: 4
+        platform: vEOS-LAB
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        uplink_ipv4_pool: 172.16.11.0/24
+        uplink_macsec:
+          profile: MACSEC_PROFILE
+        uplink_ptp:
+          enable: true
+        uplink_switches:
+        - DC1-SUPER-SPINE1
+        - DC1-SUPER-SPINE2
+      nodes:
+      - digital_twin:
+          mgmt_ip: 192.168.1.5/24
+        evpn_role: server
+        evpn_route_servers:
+        - DC2-RS1
+        - DC2-SUPER-SPINE1
+        - DC2-POD1-SPINE1
+        - DC2-POD1-LEAF1A
+        name: DC1-POD1-SPINE1
+        uplink_switch_interfaces:
+        - Ethernet1
+        - Ethernet1
+      - digital_twin:
+          act_internet_access: true
+        evpn_role: none
+        mgmt_ip: 192.168.1.6/24
+        name: DC1-POD1-SPINE2
+        serial_number: DEADBEEFC0FFEE
+        uplink_switch_interfaces:
+        - Ethernet2
+        - Ethernet2
+  appliesTo:
+    nodeSets:
+    - dc1-pod1-l2leaf1a
+    - dc1-pod1-l2leaf2a
+    - dc1-pod1-l2leaf2b
+    - dc1-pod1-leaf1a
+    - dc1-pod1-leaf1b
+    - dc1-pod1-leaf2a
+    - dc1-pod1-leaf2b
+    - dc1-pod1-spine1
+    - dc1-pod1-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1-pod1-settings
+spec:
+  design:
+    max_l3leaf_to_spine_links: 2
+    pod_name: DC1_POD1
+    underlay_filter_redistribute_connected: false
+  appliesTo:
+    nodeSets:
+    - dc1-pod1-l2leaf1a
+    - dc1-pod1-l2leaf2a
+    - dc1-pod1-l2leaf2b
+    - dc1-pod1-leaf1a
+    - dc1-pod1-leaf1b
+    - dc1-pod1-leaf2a
+    - dc1-pod1-leaf2b
+    - dc1-pod1-spine1
+    - dc1-pod1-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod2
+spec:
+  design:
+    l3leaf:
+      defaults:
+        bgp_as: 65555
+        bgp_defaults:
+        - distance bgp 20 200 200
+        loopback_ipv4_offset: 2
+        loopback_ipv4_pool: 172.16.120.0/24
+        mlag_peer_ipv4_pool: 172.20.120.0/24
+        mlag_peer_l3_ipv4_pool: 172.19.120.0/24
+        uplink_ipv4_pool: 172.17.120.0/24
+        uplink_macsec:
+          profile: MACSEC_PROFILE
+        uplink_ptp:
+          enable: true
+        virtual_router_mac_address: 00:1c:73:00:dc:01
+        vtep_loopback_ipv4_pool: 172.18.120.0/24
+      node_groups:
+      - bgp_as: 65121
+        group: RACK1_SINGLE
+        nodes:
+        - mgmt_ip: 192.168.1.15/24
+          name: DC1-POD2-LEAF1A
+          uplink_switch_interfaces:
+          - Ethernet3
+          - Ethernet3
+        platform: vEOS-LAB
+        spanning_tree_mode: none
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        uplink_switches:
+        - DC1-POD2-SPINE1
+        - DC1-POD2-SPINE2
+    spine:
+      defaults:
+        bgp_as: 65120
+        bgp_defaults:
+        - distance bgp 20 200 200
+        loopback_ipv4_pool: 172.16.120.0/24
+        max_uplink_switches: 4
+        platform: vEOS-LAB
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        uplink_ipv4_pool: 172.16.12.0/24
+        uplink_macsec:
+          profile: MACSEC_PROFILE
+        uplink_ptp:
+          enable: true
+        uplink_switches:
+        - DC1-SUPER-SPINE1
+        - DC1-SUPER-SPINE2
+      nodes:
+      - evpn_route_servers:
+        - DC1-SUPER-SPINE2
+        mgmt_ip: 192.168.1.13/24
+        name: DC1-POD2-SPINE1
+        uplink_switch_interfaces:
+        - Ethernet3
+        - Ethernet3
+      - evpn_route_servers:
+        - DC1-SUPER-SPINE2
+        mgmt_ip: 192.168.1.14/24
+        name: DC1-POD2-SPINE2
+        uplink_switch_interfaces:
+        - Ethernet4
+        - Ethernet4
+  appliesTo:
+    nodeSets:
+    - dc1-pod2-leaf1a
+    - dc1-pod2-spine1
+    - dc1-pod2-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1-pod2-settings
+spec:
+  design:
+    pod_name: DC1_POD2
+  appliesTo:
+    nodeSets:
+    - dc1-pod2-leaf1a
+    - dc1-pod2-spine1
+    - dc1-pod2-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-pod1
+spec:
+  design:
+    l2leaf:
+      defaults:
+        inband_mgmt_subnet: 172.21.210.0/24
+        mlag: false
+        platform: vEOS-LAB
+        raw_eos_cli: "interface Loopback1011\n  description Loopback created from\
+          \ raw_eos_cli under l2leaf defaults in DC2 POD1\n"
+        spanning_tree_mode: mstp
+        spanning_tree_priority: 8192
+        uplink_interfaces:
+        - Ethernet1
+      node_groups:
+      - group: RACK1_SINGLE
+        nodes:
+        - mgmt_ip: 192.168.1.23/24
+          name: DC2-POD1-L2LEAF1A
+          uplink_switch_interfaces:
+          - Ethernet3
+        uplink_switches:
+        - DC2-POD1-LEAF1A
+      - group: RACK2_SINGLE
+        nodes:
+        - mgmt_ip: 192.168.1.25/24
+          name: DC2-POD1-L2LEAF2A
+          uplink_switch_interfaces:
+          - Ethernet3
+        uplink_switches:
+        - DC2-POD1-LEAF2A
+    l3leaf:
+      defaults:
+        bgp_as: 65555
+        bgp_defaults:
+        - distance bgp 20 200 200
+        evpn_role: server
+        evpn_route_servers:
+        - DC1-RS1
+        - DC1-SUPER-SPINE1
+        - DC1-POD1-SPINE1
+        - DC1-POD1-LEAF1A
+        filter:
+          always_include_vrfs_in_tenants:
+          - all
+          tags: []
+        loopback_ipv4_offset: 2
+        loopback_ipv4_pool: 172.16.210.0/24
+        mlag: false
+        mlag_peer_ipv4_pool: 172.20.120.0/24
+        mlag_peer_l3_ipv4_pool: 172.19.120.0/24
+        platform: vEOS-LAB
+        raw_eos_cli: "interface Loopback1010\n  description Loopback created from\
+          \ raw_eos_cli under l3leaf defaults in DC2 POD1\n"
+        spanning_tree_mode: rstp
+        spanning_tree_priority: 4096
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        uplink_ipv4_pool: 172.17.210.0/24
+        uplink_ptp:
+          enable: true
+        uplink_switches:
+        - DC2-POD1-SPINE1
+        - DC2-POD1-SPINE2
+        virtual_router_mac_address: 00:1c:73:00:dc:01
+        vtep_loopback_ipv4_pool: 172.18.210.0/24
+      node_groups:
+      - bgp_as: 65211
+        group: RACK1_SINGLE
+        nodes:
+        - mgmt_ip: 192.168.1.22/24
+          name: DC2-POD1-LEAF1A
+          uplink_switch_interfaces:
+          - Ethernet3
+          - Ethernet3
+      - bgp_as: 65212
+        evpn_role: client
+        evpn_route_servers:
+        - DC2-POD1-LEAF1A
+        evpn_services_l2_only: true
+        group: RACK2_SINGLE
+        nodes:
+        - mgmt_ip: 192.168.1.24/24
+          name: DC2-POD1-LEAF2A
+          uplink_switch_interfaces:
+          - Ethernet4
+          - Ethernet4
+    spine:
+      defaults:
+        bgp_as: 65210
+        bgp_defaults:
+        - distance bgp 20 200 200
+        loopback_ipv4_pool: 172.16.210.0/24
+        max_uplink_switches: 4
+        platform: vEOS-LAB
+        raw_eos_cli: "interface Loopback1009\n  description Loopback created from\
+          \ raw_eos_cli under spine defaults in DC2 POD1\n"
+        uplink_interfaces:
+        - Ethernet1
+        - Ethernet2
+        uplink_ipv4_pool: 172.16.21.0/24
+        uplink_ptp:
+          enable: true
+        uplink_switches:
+        - DC2-SUPER-SPINE1
+        - DC2-SUPER-SPINE2
+      nodes:
+      - evpn_role: server
+        evpn_route_servers:
+        - DC1-RS1
+        - DC1-SUPER-SPINE1
+        - DC1-POD1-SPINE1
+        - DC1-POD1-LEAF1A
+        mgmt_ip: 192.168.1.20/24
+        name: DC2-POD1-SPINE1
+        uplink_switch_interfaces:
+        - Ethernet1
+        - Ethernet1
+      - evpn_role: none
+        mgmt_ip: 192.168.1.21/24
+        name: DC2-POD1-SPINE2
+        uplink_switch_interfaces:
+        - Ethernet2
+        - Ethernet2
+  appliesTo:
+    nodeSets:
+    - dc2-pod1-l2leaf1a
+    - dc2-pod1-l2leaf2a
+    - dc2-pod1-leaf1a
+    - dc2-pod1-leaf2a
+    - dc2-pod1-spine1
+    - dc2-pod1-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc2-pod1-settings
+spec:
+  design:
+    pod_name: DC2_POD1
+  appliesTo:
+    nodeSets:
+    - dc2-pod1-l2leaf1a
+    - dc2-pod1-l2leaf2a
+    - dc2-pod1-leaf1a
+    - dc2-pod1-leaf2a
+    - dc2-pod1-spine1
+    - dc2-pod1-spine2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod1-l2leaf1a
+spec:
+  design:
+    type: l2leaf
+  declares:
+  - DC1-POD1-L2LEAF1A
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod1-l2leaf2a
+spec:
+  design:
+    type: l2leaf
+  declares:
+  - DC1-POD1-L2LEAF2A
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod1-l2leaf2b
+spec:
+  design:
+    type: l2leaf
+  declares:
+  - DC1-POD1-L2LEAF2B
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod1-leaf1a
+spec:
+  design:
+    type: l3leaf
+  declares:
+  - DC1-POD1-LEAF1A
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod1-leaf1b
+spec:
+  design:
+    type: l3leaf
+  declares:
+  - DC1-POD1-LEAF1B
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod1-leaf2b
+spec:
+  design:
+    type: l3leaf
+  declares:
+  - DC1-POD1-LEAF2B
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1-pod1-leaf2b-settings
+spec:
+  design:
+    use_cv_topology: true
+  appliesTo:
+    nodeSets:
+    - dc1-pod1-leaf2b
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod1-spine1
+spec:
+  design:
+    type: spine
+  declares:
+  - DC1-POD1-SPINE1
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1-pod1-spine1-settings
+spec:
+  design:
+    management_eapi:
+      enabled: false
+  appliesTo:
+    nodeSets:
+    - dc1-pod1-spine1
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod1-spine2
+spec:
+  design:
+    type: spine
+  declares:
+  - DC1-POD1-SPINE2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod2-leaf1a
+spec:
+  design:
+    type: l3leaf
+  declares:
+  - DC1-POD2-LEAF1A
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod2-spine1
+spec:
+  design:
+    type: spine
+  declares:
+  - DC1-POD2-SPINE1
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod2-spine2
+spec:
+  design:
+    type: spine
+  declares:
+  - DC1-POD2-SPINE2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-rs1
+spec:
+  design:
+    type: overlay-controller
+  declares:
+  - DC1-RS1
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1-rs1-settings
+spec:
+  design:
+    use_cv_topology: true
+  appliesTo:
+    nodeSets:
+    - dc1-rs1
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-rs2
+spec:
+  design:
+    type: overlay-controller
+  declares:
+  - DC1-RS2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-super-spine1
+spec:
+  design:
+    type: super-spine
+  declares:
+  - DC1-SUPER-SPINE1
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-super-spine2
+spec:
+  design:
+    type: super-spine
+  declares:
+  - DC1-SUPER-SPINE2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc1-pod1-leaf2a
+spec:
+  design:
+    type: l3leaf
+  declares:
+  - DC1.POD1.LEAF2A
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: dc1-pod1-leaf2a-settings
+spec:
+  design:
+    use_cv_topology: true
+  appliesTo:
+    nodeSets:
+    - dc1-pod1-leaf2a
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-pod1-l2leaf1a
+spec:
+  design:
+    type: l2leaf
+  declares:
+  - DC2-POD1-L2LEAF1A
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-pod1-l2leaf2a
+spec:
+  design:
+    type: l2leaf
+  declares:
+  - DC2-POD1-L2LEAF2A
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-pod1-leaf1a
+spec:
+  design:
+    type: l3leaf
+  declares:
+  - DC2-POD1-LEAF1A
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-pod1-leaf2a
+spec:
+  design:
+    type: l3leaf
+  declares:
+  - DC2-POD1-LEAF2A
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-pod1-spine1
+spec:
+  design:
+    type: spine
+  declares:
+  - DC2-POD1-SPINE1
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-pod1-spine2
+spec:
+  design:
+    type: spine
+  declares:
+  - DC2-POD1-SPINE2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-rs1
+spec:
+  design:
+    type: overlay-controller
+  declares:
+  - DC2-RS1
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-rs2
+spec:
+  design:
+    type: overlay-controller
+  declares:
+  - DC2-RS2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-super-spine1
+spec:
+  design:
+    type: super-spine
+  declares:
+  - DC2-SUPER-SPINE1
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: dc2-super-spine2
+spec:
+  design:
+    type: super-spine
+  declares:
+  - DC2-SUPER-SPINE2
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eos-designs-twodc-5stage-clos-twodc-5stage-clos-id-seed
+data:
+  node-id-pools.yml: "# This file is auto-generated by AVD eos_designs.\n# When there\
+    \ is a merge conflict for this file, rebase the branch, accept all current changes\
+    \ for this file, and re-run AVD.\nnode_id_pools:\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC1/pod_name=DC1_POD1/type=l2leaf:\n\
+    \    hostname=DC1-POD1-L2LEAF1A: 1\n    hostname=DC1-POD1-L2LEAF2A: 2\n    hostname=DC1-POD1-L2LEAF2B:\
+    \ 3\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC1/pod_name=DC1_POD1/type=l3leaf:\n\
+    \    hostname=DC1-POD1-LEAF1A: 1\n    hostname=DC1-POD1-LEAF1B: 2\n    hostname=DC1-POD1-LEAF2B:\
+    \ 3\n    hostname=DC1.POD1.LEAF2A: 4\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC1/pod_name=DC1_POD1/type=spine:\n\
+    \    hostname=DC1-POD1-SPINE1: 1\n    hostname=DC1-POD1-SPINE2: 2\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC1/pod_name=DC1_POD2/type=l3leaf:\n\
+    \    hostname=DC1-POD2-LEAF1A: 1\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC1/pod_name=DC1_POD2/type=spine:\n\
+    \    hostname=DC1-POD2-SPINE1: 1\n    hostname=DC1-POD2-SPINE2: 2\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC1/type=overlay-controller:\n\
+    \    hostname=DC1-RS1: 1\n    hostname=DC1-RS2: 2\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC1/type=super-spine:\n\
+    \    hostname=DC1-SUPER-SPINE1: 1\n    hostname=DC1-SUPER-SPINE2: 2\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC2/pod_name=DC2_POD1/type=l2leaf:\n\
+    \    hostname=DC2-POD1-L2LEAF1A: 1\n    hostname=DC2-POD1-L2LEAF2A: 2\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC2/pod_name=DC2_POD1/type=l3leaf:\n\
+    \    hostname=DC2-POD1-LEAF1A: 1\n    hostname=DC2-POD1-LEAF2A: 2\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC2/pod_name=DC2_POD1/type=spine:\n\
+    \    hostname=DC2-POD1-SPINE1: 1\n    hostname=DC2-POD1-SPINE2: 2\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC2/type=overlay-controller:\n\
+    \    hostname=DC2-RS1: 1\n    hostname=DC2-RS2: 2\n  fabric_name=TWODC_5STAGE_CLOS/dc_name=DC2/type=super-spine:\n\
+    \    hostname=DC2-SUPER-SPINE1: 1\n    hostname=DC2-SUPER-SPINE2: 2\n"
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: Fabric
+metadata:
+  name: eos-designs-twodc-5stage-clos-twodc-5stage-clos
+spec:
+  fabricName: TWODC_5STAGE_CLOS
+  requires:
+  - kind: SettingSet
+    name: all
+  - kind: ConnectedEndpointSet
+    name: servers-endpoints
+  - kind: SettingSet
+    name: servers-settings
+  - kind: NetworkServiceSet
+    name: tenants-networks-services
+  - kind: SettingSet
+    name: tenants-networks-settings
+  - kind: NodeSet
+    name: twodc-5stage-clos
+  - kind: SettingSet
+    name: twodc-5stage-clos-settings
+  - kind: NodeSet
+    name: dc1
+  - kind: SettingSet
+    name: dc1-settings
+  - kind: NodeSet
+    name: dc2
+  - kind: SettingSet
+    name: dc2-settings
+  - kind: NodeSet
+    name: dc1-pod1
+  - kind: SettingSet
+    name: dc1-pod1-settings
+  - kind: NodeSet
+    name: dc1-pod2
+  - kind: SettingSet
+    name: dc1-pod2-settings
+  - kind: NodeSet
+    name: dc2-pod1
+  - kind: SettingSet
+    name: dc2-pod1-settings
+  - kind: NodeSet
+    name: dc1-pod1-l2leaf1a
+  - kind: NodeSet
+    name: dc1-pod1-l2leaf2a
+  - kind: NodeSet
+    name: dc1-pod1-l2leaf2b
+  - kind: NodeSet
+    name: dc1-pod1-leaf1a
+  - kind: NodeSet
+    name: dc1-pod1-leaf1b
+  - kind: NodeSet
+    name: dc1-pod1-leaf2b
+  - kind: SettingSet
+    name: dc1-pod1-leaf2b-settings
+  - kind: NodeSet
+    name: dc1-pod1-spine1
+  - kind: SettingSet
+    name: dc1-pod1-spine1-settings
+  - kind: NodeSet
+    name: dc1-pod1-spine2
+  - kind: NodeSet
+    name: dc1-pod2-leaf1a
+  - kind: NodeSet
+    name: dc1-pod2-spine1
+  - kind: NodeSet
+    name: dc1-pod2-spine2
+  - kind: NodeSet
+    name: dc1-rs1
+  - kind: SettingSet
+    name: dc1-rs1-settings
+  - kind: NodeSet
+    name: dc1-rs2
+  - kind: NodeSet
+    name: dc1-super-spine1
+  - kind: NodeSet
+    name: dc1-super-spine2
+  - kind: NodeSet
+    name: dc1-pod1-leaf2a
+  - kind: SettingSet
+    name: dc1-pod1-leaf2a-settings
+  - kind: NodeSet
+    name: dc2-pod1-l2leaf1a
+  - kind: NodeSet
+    name: dc2-pod1-l2leaf2a
+  - kind: NodeSet
+    name: dc2-pod1-leaf1a
+  - kind: NodeSet
+    name: dc2-pod1-leaf2a
+  - kind: NodeSet
+    name: dc2-pod1-spine1
+  - kind: NodeSet
+    name: dc2-pod1-spine2
+  - kind: NodeSet
+    name: dc2-rs1
+  - kind: NodeSet
+    name: dc2-rs2
+  - kind: NodeSet
+    name: dc2-super-spine1
+  - kind: NodeSet
+    name: dc2-super-spine2
+  nodeIdPool:
+    seedConfigMapName: eos-designs-twodc-5stage-clos-twodc-5stage-clos-id-seed

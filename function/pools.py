@@ -136,7 +136,15 @@ def configmap(xr_name: str, namespace: str, fabric_name: str, pool: str) -> dict
         "metadata": {
             "name": resource.child_name(xr_name, "id-pool"),
             "namespace": namespace,
-            "labels": {"avd.netclab.dev/fabric": fabric_name},
+            # ⚠ `fabric` alone does not find this: every ConfigMap the fabric
+            # composes carries it, so a selector returns the pool and one render
+            # per device -- 27 objects for a 26-device fabric, with the pool in
+            # no particular position. An object whose annotation says deleting it
+            # renumbers the fabric has to be addressable, so it says what it is.
+            "labels": {
+                "avd.netclab.dev/fabric": fabric_name,
+                "avd.netclab.dev/artifact": "node-id-pool",
+            },
             "annotations": {
                 "avd.netclab.dev/description":
                     "AVD node-ID assignments. Deleting this renumbers the fabric.",

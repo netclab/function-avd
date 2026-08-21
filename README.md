@@ -4,19 +4,15 @@
 [![Release](https://github.com/netclab/function-avd/actions/workflows/release.yml/badge.svg)](https://github.com/netclab/function-avd/actions/workflows/release.yml)
 
 **Arista AVD configs, kept live by Kubernetes.** Instead of running Ansible to produce
-device configs once, a fabric is modelled as a Crossplane composite resource: edit the
-`Fabric`, and every affected device's config re-renders on reconcile — including the
-devices you didn't touch, because AVD's facts are fabric-wide.
+device configs once, a fabric is a Crossplane composite resource: edit it, and every
+affected device re-renders on reconcile — including the devices you did not touch,
+because AVD's facts are fabric-wide.
 
-The engine is [pyavd](https://pypi.org/project/pyavd/) (pure Python, no Ansible),
-wrapped in a Crossplane composite function. Built against
+The engine is [pyavd](https://pypi.org/project/pyavd/) (pure Python, no Ansible), wrapped
+in a Crossplane composite function. Built against
 [Arista AVD](https://github.com/aristanetworks/avd) v6.3.0, pinned as a submodule under
 `avd/` — a read-only reference, and the source of the golden configs the tests diff
 against.
-
-> The layout follows [function-template-python](https://github.com/crossplane/function-template-python):
-> the code lives in a flat `function/` package, with `main.py` as the gRPC
-> entrypoint and `fn.py` as the FunctionRunner.
 
 ## Quick start
 
@@ -29,243 +25,139 @@ kubectl --context kind-avd apply -f examples/fabric/single-dc-l3ls.yaml
 kubectl --context kind-avd -n default get fabric,device
 ```
 
-One `Fabric` fans out to 8 `Device`s, each composing a ConfigMap that holds its AVD
+One `Fabric` fans out to 8 `Device`s, each composing a ConfigMap with that device's AVD
 structured config and rendered `eos.cfg`:
 
 ```bash
-kubectl --context kind-avd -n default get cm -l avd.netclab.dev/device
 kubectl --context kind-avd -n default get cm -l avd.netclab.dev/device=dc1-leaf1a \
   -o jsonpath='{.items[0].data.eos\.cfg}'
 ```
 
-To see the model actually live, patch a spine's `bgp_as` under `spec.design` — the
-change reaches that spine *and* its leaves' BGP neighbours, because the pipeline
-recomputes fabric-wide facts. `scripts/kind-down.sh` tears it all down.
+Patch a spine's `bgp_as` to see the model live: the change reaches that spine *and* its
+leaves' BGP neighbours. `scripts/kind-down.sh` tears it all down.
 
-### The lab
+## The API
 
-`WITH_NETCLAB=1` additionally brings up containerised cEOS nodes, cabled from the fabric
-itself: AVD resolves the peering, so `avd-topology` derives the netclab topology from the
-same model that renders the configs, and the two cannot drift apart.
+Six composite kinds, one function image dispatching on `kind`:
 
-The default subset's topology is generated once and committed as
-[`examples/lab/topology.yaml`](examples/lab/topology.yaml), so the lab boots a reviewed
-file and an AVD upgrade that changes the cabling fails `test_topology_golden` instead of
-passing unnoticed. Regenerate it with the command in that test's docstring.
+| Kind | What it is |
+|------|------------|
+| `Fabric` | one AVD fabric. Design comes from `spec.design` inline, from the inputs `spec.requires` names, or both. Composes one `Device` per host. |
+| `Device` | one switch: validates and renders its own config, composes the ConfigMap, and with `spec.push` a provider-http `Request` that holds the box in sync over eAPI. |
+| `NodeSet` | node-type blocks, and the devices they declare — the fabric's device list. |
+| `NetworkServiceSet` | tenants, VRFs, SVIs. |
+| `ConnectedEndpointSet` | servers, ports, port profiles. |
+| `SettingSet` | everything fabric-wide: BGP peer groups, AAA, NTP, addressing pools. |
+
+`spec.requires` is an ordered list; per host, the inputs that apply are layered in that
+order with `dict.update()` — Ansible's `hash_behaviour=replace`. Nothing is merged, so
+two `NodeSet`s carrying the same node-type key never meet. `spec.appliesTo` scopes an
+input (`all`, `nodeSets`, `hosts`, `matchHostnames`); on a `NodeSet`, left out, it means
+the devices that `NodeSet` declares.
+
+⚠ **A Fabric whose named inputs have not arrived renders nothing** and names what it is
+waiting for. Requirements are answered on the *next* reconcile, so the first always
+arrives empty — and a push replaces a device's whole configuration.
+
+`examples/fabric/` holds a `Fabric` per AVD example using `spec.design`;
+`examples/fabric/inputs/` holds the same fabrics through `spec.requires`. Neither names a
+namespace, so `kubectl -n <ns> apply -f <file>` decides where they land.
+
+## Migrating an AVD inventory
+
+`avd-migrate` turns an Ansible inventory into a `Fabric` plus its input XRs — one fabric
+per eos_designs play, one input per ownership fragment per category.
 
 ```bash
-WITH_NETCLAB=1 scripts/kind-up.sh     # + CNI plugins, Multus, netclab-chart, cEOS nodes
+uv run avd-migrate avd/ansible_collections/arista/avd/examples/single-dc-l3ls
+uv run avd-migrate <inventory> --emit /tmp/xrs      # write them out as manifests
+```
+
+It reimplements no part of Ansible: `ansible-inventory --list --export` says which group
+carries which variable, an ad-hoc `debug` run says what a play resolved it to. The one
+rule Ansible does not print is group order (depth, then name) — the migration layers
+fragments with it and **refuses to emit anything** unless the result equals what Ansible
+reports.
+
+What it cannot carry it names rather than dropping. Four flags carry more:
+
+| Flag | What it does |
+|------|--------------|
+| `--namespace NS` | pin the manifests to one namespace instead of naming none |
+| `--emit-pool-seed` | carry the node-ID assignments as a ConfigMap the Fabric seeds from |
+| `--compat-ip-addressing` | point `ip_addressing` at `function.avd_compat` where the pinned templates are the ones it transcribes |
+| `--drop-description-templates` | drop interface-description templates so the rest renders |
+
+Measured against AVD's own corpus: hostvars byte-identical to Ansible for all 8 bundled
+examples and 19 molecule scenarios, up to 501 devices in one play; rendered configs
+matching AVD's checked-in golden for **8 of 8 examples on a cluster**, every device.
+
+## The lab
+
+`WITH_NETCLAB=1` additionally brings up containerised cEOS nodes, cabled from the fabric
+itself — `avd-topology` derives the netclab topology from the same model that renders the
+configs, so the two cannot drift apart.
+
+```bash
+WITH_NETCLAB=1 scripts/kind-up.sh
 kubectl --context kind-avd apply -k examples/lab/
 ```
 
-cEOS is licensed and cannot be pulled — import it once and it outlives teardown in the
-registry's data volume; `kind-up.sh` says how if it is missing. `LAB_HOSTS` picks the
-subset, defaulting to the two that make one link, because all eight is 16Gi of cEOS.
-Setting it to anything else regenerates the topology, since `--hosts` is an input to
-generation rather than a filter applied to the result — a link survives only when both
-of its ends are selected.
-
-`examples/lab/` is that same fabric with eAPI bound to the default VRF, which is the one
-thing a lab genuinely needs and production does not: AVD binds eAPI to VRF MGMT on
-Management1, and a cEOS pod has neither. It also sets `spec.push`, so each lab Device
-composes a provider-http `Request` that keeps the box itself in sync over eAPI:
-
-```bash
-kubectl --context kind-avd -n default get requests.http.m.crossplane.io,device
-kubectl --context kind-avd -n default exec dc1-spine1 -- Cli -p 15 -c "show running-config digest"
-```
-
-The Request's OBSERVE reads the device's own `show running-config digest`; a mismatch --
-whether the model changed or someone edited the box by hand -- makes the provider replay
-a full `configure session` + `rollback clean-config` replace. Drift is reclaimed on the
-provider's poll interval, the same rhythm that paces the rest of the model.
-
-**No cluster?** The engine and the function both run locally:
-
-```bash
-uv run avd-migrate          # AVD's own inventories -> Fabric + input XRs
-uv run avd-migrate avd/ansible_collections/arista/avd/examples/single-dc-l3ls \
-  --emit /tmp/xrs           # ... and write them out as manifests
-crossplane render examples/fabric/single-dc-l3ls.yaml \
-  apis/fabric/composition.yaml dev/function-render.yaml
-```
-
-## How it works
-
-Two composite types, served by one function image that dispatches on `kind`:
-
-**`Fabric`** — one AVD fabric, meaning a single `fabric_name`. `spec.design` carries a
-fabric-wide `eos_designs` document (structurally open, validated by pyavd); device roles
-resolve inside it via `default_node_types`. The function runs the fabric-wide pyavd
-pipeline (`validate_inputs → get_avd_facts → get_device_structured_config`) and composes
-one `Device` per host, carrying that device's config inline in `spec.structuredConfig`.
-Multi-DC topologies are still one fabric when they share a `fabric_name` (DCs stitched
-via `evpn_gateway`).
-
-**`Device`** — validates and renders its own config (`validate_structured_config` +
-`get_device_config`), reports per-device status (`configHash`, `managementAddress`,
-`nodeType`, and `Validated`/`Rendered` conditions), and composes the artifact: a
-ConfigMap with `structured_config.yaml` + `eos.cfg`. With `spec.push` set (the Fabric
-propagates it from its own `spec.push`, lab-only today), the Device also composes a
-namespaced provider-http `Request` that pushes `eos.cfg` to the device over eAPI and
-holds it there — `Deployed` condition, `status.push.digest`, and readiness then include
-the box itself, not just the rendered artifact (see `push.py` for the protocol).
-
-Why the split? Facts are fabric-wide, so the fabric has to be the reconcile unit — one
-spine's `bgp_as` must reach its peers. But the config push to the device (or CVP)
-attaches *per device*, so a Device has to be a real reconcile unit with its own status,
-not a passive ConfigMap. The e2e test pins exactly that contract: pause the Fabric and
-patch a Device directly, and it still renders on its own; unpause, and the Fabric takes
-the change back. The Device is live, but not authoritative.
-
-## Status
-
-The full path works on a real cluster: applying two `Fabric` XRs in one namespace
-reconciles to `Synced=True Ready=True`, fanning out to 24 `Device`s → 24 ConfigMaps, all
-`Ready`, contents matching AVD golden.
-
-Liveness is fabric-wide, not just local: bumping a spine's `bgp_as` in `spec.design`
-re-renders that spine *and* rewrites `remote-as` on each of the four L3 leaves that peer
-with it, because the pipeline recomputes AVD facts for the whole fabric. What paces this
-is Crossplane's poll interval, not the render — measured on kind, the touched spine went
-in ~5s and its leaves within ~45s (see [Gotchas](#gotchas)).
-
-The loop closes on the lab: with `spec.push` set, the same `bgp_as` bump reached the
-touched spine's *running config* in ~47s and rewrote `remote-as` on its peering leaf's
-running config in ~63s — and the reverse direction holds too, a `vlan 999` added by hand
-on the box was replaced with the byte-identical golden config (EOS's own
-`show running-config digest` certifying both states) on the next provider poll.
-Deleting a Device orphans the box rather than wiping it: an empty switch is not a
+`examples/lab/` is that same fabric with eAPI bound to the default VRF — the one thing a
+lab needs and production does not — and with `spec.push` set, so each Device keeps the
+box itself in sync. A change made by hand on the device is replaced with the golden
+config on the next provider poll; EOS's own `show running-config digest` certifies both
+states. Deleting a Device orphans the box rather than wiping it: an empty switch is not a
 desired state.
 
-### Engine fidelity
-
-Before wrapping pyavd in Crossplane, the point was to prove the pyavd path reproduces
-AVD's own output. Each bundled AVD example is rebuilt into `all_inputs` the way Ansible
-would (per-host group_vars merge, in precedence order), run through pyavd, and deep-diffed
-against the example's checked-in `intended/structured_configs`.
-
-| Example | Devices | From Ansible inputs | Folded into one `Fabric` |
-|---------|--------:|:-------------------:|:------------------------:|
-| single-dc-l3ls | 8 | ✅ | ✅ |
-| single-dc-l3ls-ipv6 | 8 | ✅ | ✅ |
-| single-dc-multipod-l3ls | 10 | ✅ | ✅ |
-| dual-dc-l3ls | 16 | ✅ | ✅ |
-| l2ls-fabric | 6 | ✅ | ✅ |
-| isis-ldp-ipvpn | 9 | ✅ | ✅ |
-| campus-fabric | 10 | ✅ | ⏸ deferred |
-| cv-pathfinder | 17 | ⏸ deferred | ⏸ deferred |
-
-Zero diffs everywhere it is ticked, across both group_vars layouts (per-group directories
-and flat files) and explicit and implicit `all` inventories. The fold
-An inventory becomes one `Fabric` per eos_designs play, plus one input XR per
-ownership fragment per category. Nothing is folded into a single document and
-nothing is merged: two NodeSets carrying the same node-type key never meet,
-because no device sees both.
-
-**The migration reimplements no part of Ansible.** `function/ansible_cli.py`
-asks it instead -- `ansible-inventory --list --export` for which group carries
-which variable, and an ad-hoc `debug` run for what a play resolves those
-variables to. The one rule the Ansible CLI does not print is group order
-(depth, then name); the migration layers the fragments with it and **refuses to
-emit anything** unless the result equals what Ansible reports.
-
-Measured over AVD's own corpus: byte-identical hostvars for all 8 bundled
-examples and 19 molecule scenarios, up to 501 devices in one play; and rendered
-configs matching AVD's checked-in golden for 8 of 8 examples and 8 of 12
-molecule scenarios that ship one.
-
-What the remaining four meet is upstream, not the model: pyavd implements no
-Jinja templating (`templar=None`, `NotImplementedError`), `pool_manager` needs
-somewhere for a Fabric to keep an ID pool, and one scenario loads a custom
-Python module. `avd-migrate` names each of them rather than dropping it --
-`--drop-description-templates` is the one exception, and only because dropping
-those was measured to cost `description` fields and nothing else.
+cEOS is licensed and cannot be pulled; import it once and it outlives teardown in the
+registry's data volume (`kind-up.sh` says how). `LAB_HOSTS` picks the subset, defaulting
+to the two that make one link, because all eight is 16Gi of cEOS.
 
 ## Testing
 
 ```bash
-uv run pytest              # offline: resolution vs Ansible, goldens, the Struct gotcha (~50s)
-uv run pytest -m corpus    # the whole molecule corpus: 501 devices, 71 plays (~3min)
-uv run pytest -m e2e       # live cluster: needs kind-up.sh + an applied fabric (~2min)
+uv run pytest              # offline, no cluster (~90s)
+uv run pytest -m corpus    # the whole molecule corpus: 501 devices, 71 plays (~4min)
+uv run pytest -m e2e       # live cluster: needs kind-up.sh (~6min)
 ```
 
 | Path | Covers |
-|------|---------|
+|------|--------|
 | `tests/test_kinds_equivalence.py` | the inputs resolve exactly as Ansible does, and render golden |
+| `tests/test_fabric_collect.py` | collection and the gate, driving `RunFunction` directly |
+| `tests/test_nulls.py` | an explicit null survives an API server that prunes it |
 | `tests/test_categories.py` | which kind a key belongs to still matches AVD's own schema |
-| `tests/test_normalize_numbers.py` | the protobuf-`Struct` double→int coercion |
-| `tests/test_push.py` | the eAPI push Request builders: session contents, digest provenance |
-| `tests/test_e2e_device_layer.py` | drift/reclaim + steady-state idempotency, on a cluster |
-| `tests/test_e2e_push_layer.py` | on-box drift reclaim + at-rest quiet, on the netclab lab (skips without it) |
+| `tests/test_avd_compat.py` | the v2.x addressing class against AVD's golden |
+| `tests/test_e2e_migrated_corpus.py` | all 8 examples migrated, applied, rendered, diffed — on a cluster |
+| `tests/test_e2e_node_id_pool.py` | the node-ID pool, seeded and kept, on a cluster |
+| `tests/test_e2e_device_layer.py` | drift/reclaim + steady-state idempotency (needs an applied fabric) |
+| `tests/test_e2e_push_layer.py` | on-box drift reclaim on the netclab lab (skips without it) |
 
-CI gates every push and PR on the offline suite (with `submodules: true` — the golden
-configs live there). The e2e job builds the function image and installs Crossplane, so it
-is `workflow_dispatch` only.
+CI gates every push and PR on the offline suite (with `submodules: true` — the goldens
+live there). The e2e job builds the image and installs Crossplane, so it is
+`workflow_dispatch` only.
 
 ## Releasing
 
-`[project].version` in `pyproject.toml` is the only version number: the release workflow
-publishes under it and `kind-up.sh` tags the local image with it, so a locally built
-image and a released package can't mean different code under the same tag. Cutting a
-release is a bump, a commit, and a matching tag:
+`[project].version` in `pyproject.toml` is the only version number; a tag that disagrees
+fails the run rather than publishing under either number. ⚠ `uv.lock` carries the project
+version too, and CI runs `uv sync --locked` — bump both in one commit.
 
 ```bash
-uv version 0.2.0            # edits pyproject.toml
+uv version 0.2.0 && uv sync
 git commit -am 'Release v0.2.0' && git tag v0.2.0
 git push origin main v0.2.0
 ```
 
-A tag that disagrees with `pyproject.toml` fails the run rather than publishing under
-either number. `workflow_dispatch` publishes too, taking no input — it releases whatever
-version the checked-out tree declares.
+The workflow builds the runtime image for `linux/amd64` and `linux/arm64`, embeds each
+into an xpkg, and pushes both as one multi-platform package — plus a **second package**,
+`configuration-avd`, the API this function serves. Both go to `ghcr.io/netclab/` always,
+and to `xpkg.upbound.io/netclab/` when the `UPBOUND_TOKEN` secret is set. Only the latter
+feeds [the Marketplace](https://marketplace.upbound.io/functions/netclab).
 
-The workflow reruns the offline suite, builds the runtime image for `linux/amd64` and
-`linux/arm64`, embeds each into an xpkg, and pushes both as one multi-platform package.
-It also builds a **second package** — `configuration-avd`, the API this function serves
-— and pushes it separately, under the same version:
-
-| Destination | When |
-|-------------|------|
-| `ghcr.io/netclab/function-avd:<version>` | always — the workflow's `GITHUB_TOKEN` is enough |
-| `ghcr.io/netclab/configuration-avd:<version>` | always |
-| `xpkg.upbound.io/netclab/function-avd:<version>` | only when the `UPBOUND_TOKEN` secret is set |
-| `xpkg.upbound.io/netclab/configuration-avd:<version>` | only when the `UPBOUND_TOKEN` secret is set |
-
-The second one is what feeds
-[marketplace.upbound.io/functions/netclab](https://marketplace.upbound.io/functions/netclab):
-the Marketplace indexes `xpkg.upbound.io`, so a GHCR-only release is installable but not
-listed. `UPBOUND_TOKEN` is an Upbound robot or personal access token with write access to
-the `netclab` organization; without it the release still succeeds and logs a warning.
-`up xpkg push --create` makes the repository on first push, but pushing is not publishing
-— see the Marketplace gotcha below for the one-time step that actually produces a public
-listing.
-
-Either registry makes the function installable without the local-registry dance in
-`kind-up.sh`. Pick a tag from
-[releases](https://github.com/netclab/function-avd/releases) — there is no `latest`,
-deliberately: a function whose version can move under a running cluster is not one you
-can reason about.
-
-```yaml
-apiVersion: pkg.crossplane.io/v1
-kind: Function
-metadata:
-  name: function-avd
-spec:
-  package: ghcr.io/netclab/function-avd:<version>
-```
-
-### The Configuration package
-
-A Function package **cannot carry XRDs or Compositions** — `crossplane xpkg build`
-rejects both with `object is not a CRD`, because a Function package takes only the CRDs
-describing its input, and this function has none (the XRs are its API). So
-`apis/fabric/` and `apis/device/` ship as their own Configuration, built from `apis/`
-with `apis/crossplane.yaml` as its metadata.
-
-Installing it pulls the function in as a dependency, so this is the one line a consumer
-needs:
+Installing the Configuration pulls the function in as a dependency, so this is the one
+line a consumer needs:
 
 ```yaml
 apiVersion: pkg.crossplane.io/v1
@@ -276,117 +168,34 @@ spec:
   package: ghcr.io/netclab/configuration-avd:<version>
 ```
 
-Crossplane names a dependency-installed function `<org>-<name>`, so the Function object
-lands as `netclab-function-avd` — which is exactly the name both Compositions reference
-and the name `kind-up.sh` installs under, so the dev cluster and a real install agree.
-
-## Gotchas
-
-The non-obvious things this repo encodes, each of which cost a debugging session:
-
-- **Pushing to Upbound is not publishing, and `PUBLIC` doesn't mean listed.** A repository
-  created by `up xpkg push --create` gets the publishing policy `draft`. Nothing in the
-  release output says so, and as the repository's owner you can open its Marketplace page
-  while logged in — so it looks published when anonymously there is no listing at all.
-  The `PUBLIC` column is a separate axis: it governs anonymous *pull* from the registry,
-  which works fine throughout. `up repository list` is the ground truth; fix it once with
-  `up repository update --private=false --publish function-avd` (both flags are required,
-  so `--private` has to be given explicitly). The policy is a repository attribute, not a
-  version one, so correcting it never needs a new release.
-- **A bare 401 from a registry doesn't mean private.** Both `ghcr.io` and `xpkg.upbound.io`
-  answer an unauthenticated manifest request with `401` and a
-  `www-authenticate: Bearer realm=…` header — the normal Docker token flow. Exchange for
-  an anonymous token at that realm first, then judge visibility by whether *that* succeeds.
-  Reading the 401 directly is how you conclude a public package is private.
-- **`Struct` has no integers.** Crossplane passes resources as protobuf `Struct`, whose
-  only numeric type is `double`, so VLAN ids and ASNs arrive as floats and pyavd's schema
-  rejects them. `fn._normalize_numbers` coerces whole-number floats back to
-  `int` (leaving bools and genuine fractionals alone).
-- **Never write a value that changes every reconcile.** An unconditional timestamp causes
-  a perpetual reconcile and a watch storm. `lastRenderedTime` is only bumped when
-  `configHash` actually changes.
-- **Readiness does not propagate by itself.** With function pipelines Crossplane does
-  *not* derive a composed resource's readiness from its `Ready` condition — the Fabric
-  function reads each observed Device's readiness and sets `ready` explicitly, so
-  `Fabric.Ready` reflects real per-device state.
-- **Two image pullers, one reference.** The function image must be pulled by the
-  Crossplane pod (cluster network) *and* the node's containerd (node network, which can't
-  resolve cluster DNS). Referencing the registry by its kind-network IP over plain HTTP
-  satisfies both; containerd is told the registry is insecure.
-- **Composed names are XR-scoped**, not `fabric_name`-scoped, so two fabrics with the same
-  `fabric_name` and overlapping hostnames never collide over a Device or a ConfigMap.
-- **Non-root runtime.** The image entrypoint runs the installed console script directly,
-  not `uv run`, which would need a writable cache under `$HOME`.
-- **Propagation waits on the poll interval, not on the render.** Crossplane polls every
-  60s by default, so a change that doesn't raise a prompt watch event just sits until the
-  next pass. Measured on a fresh kind cluster: a direct `Device` patch renders in 2-41s,
-  while the Fabric reclaiming that drift takes ~127s — roughly two chained intervals,
-  since the Fabric has to notice first and the Device re-render after. A re-render that
-  "didn't happen" has usually just not happened *yet*; the e2e budgets allow for it.
-- **A pushed config has to keep its own transport alive.** `configure replace` is a
-  *full* replace, so whatever eAPI the device was reached over is gone unless the pushed
-  config re-states it. AVD renders `management api http-commands / protocol https` bound
-  to the VRF from `mgmt_interface_vrf` (MGMT) — so a lab that bootstraps eAPI on plain
-  HTTP, or reaches the device outside VRF MGMT, loses it on the first successful push.
-  `examples/lab/` binds eAPI to the default VRF for exactly this reason; the netclab
-  chart bootstraps the same https/443 AVD renders, so bootstrap and steady state agree.
-  The same rule holds for *credentials*: the chart bootstraps `arista`/`arista`, and the
-  model's `arista` user carries the sha512 of that very password — one Secret works
-  before and after the first push. Change either side alone and the push locks itself out.
-- **A config session must not have a fixed name.** EOS keeps exactly **one** completed
-  session in history (`show configuration sessions`), so `configure session avd-<hash>`
-  works once — and then every retry of the same revision, which is precisely the
-  drift-reclaim re-push, fails with `already completed`. The push uses an *unnamed*
-  session (the device picks a fresh name each attempt) and carries its revision in the
-  JSON-RPC `id` instead.
-- **eAPI reports failure inside an HTTP 200.** A failed command comes back as a JSON
-  `error` member on a perfectly successful HTTP response, so provider-http counts the
-  push as a success and `Synced` stays `True`. The loop still converges — the next
-  OBSERVE sees the digest mismatch and retries — but the *only* honest failure signal
-  is the Request's `status.response.body`, not its conditions.
-- **Record the golden digest only from a response that proves its revision.** The
-  running-config digest cannot be predicted from `eos.cfg` (EOS canonicalizes), so it is
-  recorded from the device — but the Request's status can lag the spec by a reconcile.
-  A push response is trusted via the revision-scoped JSON-RPC `id` it echoes; an observe
-  response only via the pushed `alias avd_cfg_<hash>` marker, and even then only while
-  no digest is recorded for that revision — otherwise manual drift observed at the wrong
-  moment would be blessed as the new golden state and the model change would never land.
-- **`management_eapi` is all-or-nothing.** Absent, it defaults to enabled (https, VRF
-  MGMT) — which is what golden shows. But set *any* of it without `enabled: true` and the
-  block defaults to disabled, rendering no `management_api_http` at all: a config that
-  locks you out of the device it is pushed to.
-- **`Responsive=False WatchCircuitOpen` looks like the culprit and isn't.** Devices report
-  it ("Too many watch events from ConfigMap/…") for long stretches after the create burst,
-  right next to every slow re-render — but with the breaker open, a direct Device patch
-  still rendered in 2s. Blaming it costs you an afternoon; the poll interval above is the
-  real pacing. At rest the model is idempotent and rewrites nothing regardless.
+There is no `latest`, deliberately: a function whose version can move under a running
+cluster is not one you can reason about.
 
 ## Layout
 
 | Path | Purpose |
 |------|---------|
 | `function/main.py` | gRPC entrypoint (`avd-function`, the image's ENTRYPOINT) |
-| `function/fn.py` | the Crossplane composite function (FunctionRunner: Fabric + Device) |
-| `function/engine.py` | pyavd pipeline wrapper; `render_fabric_design` is the function's core |
+| `function/fn.py` | the composite function: dispatch, the six kinds, composition |
+| `function/engine.py` | pyavd pipeline wrapper |
+| `function/kinds.py` | the input model: `Input`, `resolve`, which kind a key belongs to |
+| `function/pools.py` | the node-ID pool a Fabric composes and seeds from |
+| `function/nulls.py` | an explicit null carried past an API server that prunes it |
 | `function/push.py` | eAPI push protocol: the provider-http `Request` builders |
-| `function/kinds.py` | the input-kind model: `Input`, `resolve`, and which kind a key belongs to |
-| `function/ansible_cli.py` | Ansible asked rather than reimplemented (dev-only; the runtime never imports it) |
-| `function/migrate.py` | an AVD inventory -> `Fabric` + input XRs (`avd-migrate`) |
-| `apis/fabric/`, `apis/device/` | XRD + Composition for each layer |
-| `apis/crossplane.yaml` | Configuration package metadata — `apis/` is that package's root |
-| `dev/` | `Function` manifests for local use (kind install, `crossplane render`); outside `apis/` so the Configuration build needs no exclusions |
-| `examples/fabric/` | example `Fabric` XRs (each reproduces golden) |
-| `examples/lab/` | kustomize overlay: the same fabric as run on the netclab lab |
-| `Dockerfile`, `package/crossplane.yaml` | function runtime image + package metadata |
+| `function/avd_compat.py` | AVD behaviours pyavd cannot reach, as the classes AVD asks for |
+| `function/ansible_cli.py` | Ansible asked rather than reimplemented (dev-only) |
+| `function/migrate.py` | an AVD inventory → `Fabric` + input XRs (`avd-migrate`) |
+| `apis/` | XRD + Composition per kind; `apis/crossplane.yaml` is the Configuration's metadata |
+| `dev/` | `Function` manifests for local use; outside `apis/` so the build needs no exclusions |
+| `examples/fabric/`, `examples/fabric/inputs/` | the same fabrics, by design and by inputs |
+| `examples/lab/` | kustomize overlay: that fabric as run on the netclab lab |
 | `scripts/kind-up.sh`, `kind-down.sh` | reproducible cluster bring-up / teardown |
-| `.github/workflows/` | `ci.yml` (offline suite + dispatchable e2e), `release.yml` (GHCR + Upbound) |
 | `avd/` | AVD v6.3.0 submodule (read-only) |
 
-Versions are pinned deliberately: `pyavd` matches the `avd` submodule tag, because the
-golden configs come from the submodule — the two only ever move together, which is why
-Renovate leaves both alone (`renovate.json`).
+`pyavd` matches the `avd` submodule tag — the goldens come from the submodule, so the two
+only ever move together, which is why Renovate leaves both alone.
 
 ## License
 
 Apache-2.0. Builds on [Arista AVD](https://github.com/aristanetworks/avd), also
-Apache-2.0; the example fabrics are folded from AVD's own published examples.
+Apache-2.0; the example fabrics are derived from AVD's own published examples.

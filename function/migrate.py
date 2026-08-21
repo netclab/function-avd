@@ -31,6 +31,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import nulls
 from .ansible_cli import ALL_GROUP, Inventory, Play, design_plays, plays, read_inventory
 from .kinds import Input, KINDS, Vocabulary, by_kind, hosts_in_blocks, is_node_block
 
@@ -69,6 +70,13 @@ class Fabric:
     fabric_name: str = ""
     #: things the XRs cannot express, said out loud rather than dropped
     notes: list[str] = field(default_factory=list)
+    #: the pool's assignments, when asked to carry them (--emit-pool-seed)
+    pool_seed: str = ""
+
+    @property
+    def seed_name(self) -> str:
+        """The ConfigMap the emitted Fabric seeds its pool from."""
+        return f"{self.name}-id-seed"
 
     @property
     def requires(self) -> list[tuple[str, str]]:
@@ -311,7 +319,9 @@ def _fabric_name(root: Path, play: Play, many: bool, taken: set[str]) -> str:
 
 
 def migrate(root: Path, collections: Path | None = None, inventory: Path | None = None,
-            inv: Inventory | None = None, drop_descriptions: bool = False) -> list[Fabric]:
+            inv: Inventory | None = None, drop_descriptions: bool = False,
+            compat_addressing: bool = False,
+            emit_pool_seed: bool = False) -> list[Fabric]:
     """Translate every eos_designs play under ``root`` into a Fabric.
 
     Raises :class:`MigrationError` when the layered fragments disagree with the
@@ -367,7 +377,9 @@ def migrate(root: Path, collections: Path | None = None, inventory: Path | None 
         _report_play_vars(fabric, root, play)
         # Only now, with the translation proven faithful. Dropping anything
         # before the comparison above would weaken the one gate this module has.
-        _report_unsupported(fabric, drop_descriptions)
+        if emit_pool_seed:
+            _carry_pool_seed(fabric, root)
+        _report_unsupported(fabric, drop_descriptions, compat_addressing)
         fabrics.append(fabric)
     return fabrics
 
@@ -377,6 +389,40 @@ def _pooled_ids(design: dict) -> dict:
     if isinstance(node_id, dict) and node_id.get("algorithm") == "pool_manager":
         return node_id
     return {}
+
+
+def _carry_pool_seed(fabric: Fabric, root: Path) -> None:
+    """Read the pool's assignments so they can travel as a seed ConfigMap.
+
+    The setting travels by itself; the state does not, and that asymmetry is
+    silent and expensive -- applied to a fabric that is already deployed, fresh
+    IDs renumber every device and the render reaches switches as a full
+    configuration replacement. `eos_designs-twodc-5stage-clos` cannot even
+    render without them: its v2.x addressing derives addresses from IDs, so a
+    fresh set collides and AVD refuses.
+
+    Named and absent is fatal here for the same reason it is fatal in the
+    function: carrying on is the one outcome this exists to prevent.
+    """
+    for inp in fabric.inputs:
+        pooled = _pooled_ids(inp.design)
+        if not pooled:
+            continue
+        named = pooled.get("pools_file")
+        if not named:
+            raise MigrationError(
+                f"{fabric.name} asks for pool-assigned node IDs but names no "
+                f"pools_file, so there are no assignments to carry"
+            )
+        path = Path(named)
+        path = path if path.is_absolute() else root / path
+        if not path.is_file():
+            raise MigrationError(
+                f"{fabric.name}: pools_file {named} does not exist under {root}; "
+                f"emitting without it would renumber every device"
+            )
+        fabric.pool_seed = path.read_text()
+        return
 
 
 def _report_play_vars(fabric: Fabric, root: Path, play: Play) -> None:
@@ -412,7 +458,8 @@ def _report_play_vars(fabric: Fabric, root: Path, play: Play) -> None:
         )
 
 
-def _report_unsupported(fabric: Fabric, drop_descriptions: bool) -> None:
+def _report_unsupported(fabric: Fabric, drop_descriptions: bool,
+                        compat_addressing: bool = False) -> None:
     """Note -- and optionally drop -- what pyavd will not honour."""
     # State, not settings. An inventory already running `pool_manager` keeps its
     # node IDs in a file AVD generated; this translates the *setting* and leaves
@@ -423,12 +470,43 @@ def _report_unsupported(fabric: Fabric, drop_descriptions: bool) -> None:
         pooled = _pooled_ids(inp.design)
         if pooled:
             where = pooled.get("pools_file") or "<root_dir>/intended/data/<fabric>-ids.yml"
-            fabric.notes.append(
-                f"node IDs come from a pool; its assignments live in {where} and do "
-                f"NOT travel with this migration. Seed them into the fabric "
-                f"(spec.nodeIdPool.seedConfigMapName) or every device is renumbered"
-            )
+            if fabric.pool_seed:
+                fabric.notes.append(
+                    f"node IDs come from a pool; its assignments travel as ConfigMap "
+                    f"{fabric.seed_name}, read from {where}"
+                )
+            else:
+                fabric.notes.append(
+                    f"node IDs come from a pool; its assignments live in {where} and do "
+                    f"NOT travel with this migration. Seed them into the fabric "
+                    f"(spec.nodeIdPool.seedConfigMapName, --emit-pool-seed) or every "
+                    f"device is renumbered"
+                )
             break
+
+    # Carried, not dropped -- but a reader of the emitted file meets a value AVD
+    # never wrote, so the tool says where it came from.
+    marked = sum(nulls.count(inp.design) for inp in fabric.inputs)
+    if marked:
+        fabric.notes.append(
+            f"{marked} explicitly-null value(s) carried as {nulls.MARKER}; a real "
+            f"null is pruned from an open field by the API server"
+        )
+
+    # Before the unsupported sweep below, so a block this replaces is reported
+    # as replaced rather than as something pyavd cannot honour.
+    if compat_addressing:
+        swapped = [
+            f"{inp.name}.{path}"
+            for inp in fabric.inputs
+            for path in use_compat_addressing(inp.design)
+        ]
+        if swapped:
+            fabric.notes.append(
+                f"{len(swapped)} ip_addressing template(s) replaced by "
+                f"{COMPAT_CLASS['python_module']}.{COMPAT_CLASS['python_class_name']}, "
+                f"which transcribes AVD's v2.x spine scheme: {swapped[0]}"
+            )
 
     if drop_descriptions:
         dropped = [
@@ -538,6 +616,54 @@ def drop_description_templates(design: dict) -> list[str]:
     return removed
 
 
+#: What `function.avd_compat` transcribes, and therefore the only templates this
+#: substitution is entitled to replace. AVD's v2.x spine-to-super-spine scheme
+#: divides the uplink pool by `max_uplink_switches`; its native algorithm packs
+#: addresses contiguously, so the two are not interchangeable and swapping the
+#: class in over somebody else's template would emit a different network.
+COMPAT_CLASS = {"python_module": "function.avd_compat",
+                "python_class_name": "AvdIpAddressingV2Spine"}
+COMPAT_TEMPLATES = {"p2p_uplinks_ip", "p2p_uplinks_peer_ip"}
+
+
+def use_compat_addressing(design: dict) -> list[str]:
+    """Point `ip_addressing` at the class this image ships, where it fits.
+
+    pyavd implements no Jinja templating, so a design pinning `.j2` addressing
+    cannot render at all -- not "renders differently". The same schema block
+    takes `python_module`, which pyavd does support, and this repo ships one
+    transcription: AVD's v2.x spine scheme.
+
+    Replaces a block **only** when every template in it is one this class
+    reproduces, and returns what it replaced so the caller can say so. A block
+    naming anything else is left alone and stays reported as unsupported --
+    silently substituting there would put our addresses on somebody else's
+    fabric.
+    """
+    swapped: list[str] = []
+
+    def walk(node: object, path: list[str]) -> None:
+        if isinstance(node, dict):
+            for key in list(node):
+                value = node[key]
+                if key == "ip_addressing" and isinstance(value, dict):
+                    templates = {
+                        n for n, v in value.items()
+                        if isinstance(v, str) and v.endswith(".j2")
+                    }
+                    if templates and templates <= COMPAT_TEMPLATES:
+                        node[key] = dict(COMPAT_CLASS)
+                        swapped.append(".".join([*path, key]))
+                    continue
+                walk(value, [*path, str(key)])
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                walk(value, [*path, f"[{index}]"])
+
+    walk(design, [])
+    return swapped
+
+
 def _fabric_name_of(fabric: Fabric, hostvars: dict[str, dict]) -> None:
     """Fill ``spec.fabricName`` and note it when the devices disagree.
 
@@ -562,12 +688,35 @@ def _fabric_name_of(fabric: Fabric, hostvars: dict[str, dict]) -> None:
         )
 
 
-def to_manifests(fabric: Fabric, namespace: str = "default") -> list[dict]:
-    """The Fabric and its inputs, as manifests in ``spec.requires`` order."""
+def to_manifests(fabric: Fabric, namespace: str | None = None) -> list[dict]:
+    """The Fabric and its inputs, as manifests in ``spec.requires`` order.
+
+    Explicitly-null values leave here as :data:`nulls.MARKER`, because an API
+    server prunes a real null out of an open field -- see :mod:`function.nulls`.
+    A document already carrying the marker is refused: encoding it would make
+    somebody else's string indistinguishable from a null on the way back.
+
+    ⚠ **No namespace unless one is asked for.** Written without it, the whole set
+    goes wherever ``kubectl -n <ns> apply -f`` puts it: `spec.requires` needs
+    only kind and name, and a `Fabric` looks for an input it does not place in
+    its own namespace (`fn.py`). Proven on a cluster -- eight devices, Ready, in
+    a namespace named nowhere in the file. Pinning one instead makes the file
+    apply to exactly one place and collide with any other fabric that named the
+    same input there.
+    """
     group = "avd.netclab.dev/v1alpha1"
+
+    def placed(name: str) -> dict:
+        return {"name": name} | ({"namespace": namespace} if namespace else {})
+
     out: list[dict] = []
     for inp in fabric.inputs:
-        spec: dict = {"design": inp.design}
+        if nulls.carries(inp.design):
+            raise MigrationError(
+                f"{inp.kind}/{inp.name} already contains {nulls.MARKER!r} as a value; "
+                f"it is how an explicit null is carried, so this cannot be told apart"
+            )
+        spec: dict = {"design": nulls.encoded(inp.design)}
         if inp.declares:
             spec["declares"] = inp.declares
         applies: dict = {}
@@ -583,19 +732,29 @@ def to_manifests(fabric: Fabric, namespace: str = "default") -> list[dict]:
             spec["appliesTo"] = applies
         out.append({
             "apiVersion": group, "kind": inp.kind,
-            "metadata": {"name": inp.name, "namespace": namespace},
+            "metadata": placed(inp.name),
             "spec": spec,
         })
+    spec_fabric: dict = {
+        "fabricName": fabric.fabric_name or fabric.name,
+        "requires": [{"kind": i.kind} | placed(i.name) for i in fabric.inputs],
+    }
+    if fabric.pool_seed:
+        # Not an XR, and the only object here that is not one. A pool is state:
+        # the assignments AVD already made, which decide addresses. Without them
+        # this fabric does not render differently, it does not render at all.
+        from . import pools
+
+        out.append({
+            "apiVersion": "v1", "kind": "ConfigMap",
+            "metadata": placed(fabric.seed_name),
+            "data": {pools.DATA_KEY: fabric.pool_seed},
+        })
+        spec_fabric["nodeIdPool"] = {"seedConfigMapName": fabric.seed_name}
     out.append({
         "apiVersion": group, "kind": "Fabric",
-        "metadata": {"name": fabric.name, "namespace": namespace},
-        "spec": {
-            "fabricName": fabric.fabric_name or fabric.name,
-            "requires": [
-                {"kind": i.kind, "name": i.name, "namespace": namespace}
-                for i in fabric.inputs
-            ],
-        },
+        "metadata": placed(fabric.name),
+        "spec": spec_fabric,
     })
     return out
 
@@ -624,7 +783,26 @@ def main() -> int:
     parser.add_argument("roots", nargs="*", type=Path,
                         default=[Path("avd/ansible_collections/arista/avd/examples")])
     parser.add_argument("--emit", type=Path, help="write manifests under this directory")
-    parser.add_argument("--namespace", default="default")
+    parser.add_argument(
+        "--namespace", default=None,
+        help="pin the manifests to one namespace. Left out, they name none and "
+             "`kubectl -n <ns> apply -f` decides -- which is what makes one "
+             "emitted file usable in any namespace.",
+    )
+    parser.add_argument(
+        "--emit-pool-seed", action="store_true",
+        help="carry the node-ID assignments too, as a ConfigMap the emitted "
+             "Fabric seeds from. Without them a fabric already running "
+             "pool_manager is renumbered on its first reconcile -- and the "
+             "render is pushed as a full configuration replacement.",
+    )
+    parser.add_argument(
+        "--compat-ip-addressing", action="store_true",
+        help="point an `ip_addressing` block at function.avd_compat where it "
+             "pins the v2.x spine templates that module transcribes. pyavd "
+             "implements no Jinja templating, so such a design does not render "
+             "at all; any other template is left alone and stays reported.",
+    )
     parser.add_argument(
         "--drop-description-templates", action="store_true",
         help="drop interface-description templates so the rest renders. Cosmetic "
@@ -641,7 +819,9 @@ def main() -> int:
         for root in _discover(top):
             try:
                 fabrics = migrate(root, collections=collections,
-                                  drop_descriptions=args.drop_description_templates)
+                                  drop_descriptions=args.drop_description_templates,
+                                  compat_addressing=args.compat_ip_addressing,
+                                  emit_pool_seed=args.emit_pool_seed)
             except MigrationError as err:
                 print(f"[skip] {root.name:38s} {str(err).split(': ', 1)[-1]}")
                 continue

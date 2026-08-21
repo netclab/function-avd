@@ -1,15 +1,27 @@
 """Crossplane composite function for the AVD living model.
 
-One function serves two composite kinds (dispatched on ``kind``):
+One function serves six composite kinds (dispatched on ``kind``):
 
-* ``Fabric`` -- runs the fabric-wide pyavd pipeline
-  (``engine.render_fabric_design``) and emits one ``Device`` XR per host,
-  carrying that device's structured config inline in ``spec.structuredConfig``.
+* ``Fabric`` -- the design, either inline in ``spec.design`` or assembled from
+  the inputs ``spec.requires`` names. Runs the fabric-wide pyavd pipeline and
+  emits one ``Device`` XR per host, carrying that device's structured config
+  inline in ``spec.structuredConfig``. A fabric whose inputs have not arrived
+  renders nothing: a push replaces a device's whole config, so a premature
+  render reaches the switch.
 * ``Device`` -- validates and renders its own structured config (pyavd
   ``validate_structured_config`` + ``get_device_config``), reports per-device
   status/conditions, and emits a ConfigMap artifact (structured config + EOS
   CLI). With ``spec.push`` set it also composes a provider-http ``Request``
   that keeps the device's running config in sync over eAPI (see push.py).
+* ``NodeSet``, ``NetworkServiceSet``, ``ConnectedEndpointSet``, ``SettingSet``
+  -- one category of design each. They compose nothing; a Fabric collects them
+  (see kinds.py). Their reconcile reports what the fragment contributes, on the
+  object its own team owns.
+
+Two things the transport loses on the way in, both restored here rather than
+worked around downstream: protobuf ``Struct`` carries every number as a double
+(``_normalize_numbers``), and an API server prunes an explicit null out of an
+open field (``nulls``).
 
 The gRPC entrypoint lives in ``main.py`` (function-template-python layout).
 """
@@ -26,7 +38,7 @@ from crossplane.function import logging, resource, response
 from crossplane.function.proto.v1 import run_function_pb2 as fnv1
 from crossplane.function.proto.v1 import run_function_pb2_grpc as grpcv1
 
-from . import pools, push
+from . import nulls, pools, push
 from .engine import (
     InputValidationError,
     device_roles_from_design,
@@ -175,8 +187,9 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
                 return  # gated -- _collect reported why
         else:
             # The released path: one fabric-wide document handed to every device,
-            # with AVD resolving roles from the node-type blocks.
-            document = dict(design)
+            # with AVD resolving roles from the node-type blocks. It never meets
+            # resolve(), so it restores its own explicit nulls.
+            document = nulls.restored(dict(design))
             document["fabric_name"] = fabric_name
             all_inputs = {host: document for host in hostnames_from_design(document)}
 

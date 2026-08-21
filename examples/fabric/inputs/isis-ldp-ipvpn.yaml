@@ -1,0 +1,369 @@
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: fabric
+spec:
+  design:
+    aaa_settings:
+      local_users:
+      - name: admin
+        no_password: true
+        privilege: 15
+        role: network-admin
+      - name: arista
+        privilege: 15
+        role: network-admin
+        sha512_password: $6$Enl0WfE32FthwyiJ$yTyGaEJ2uPKLU.F7314YtB7J1jrzrMi7ogXIRTEHQfLdLgKWWmr1UvNlZLN6AyuxET7G5aH3AI9OYRzxVTkB1.
+    bgp_peer_groups:
+      mpls_overlay_peers:
+        password: $1c$G8BQN0ezkiJOX2cuAYpsEA==
+      rr_overlay_peers:
+        password: $1c$G8BQN0ezkiJOX2cuAYpsEA==
+    custom_structured_configuration_management_security:
+      password:
+        encryption_key_common: true
+    eos_designs_documentation:
+      p2p_links_csv: true
+      topology_csv: true
+    fabric_name: FABRIC
+    management_eapi:
+      enabled: true
+    overlay_routing_protocol: ibgp
+    underlay_routing_protocol: isis-ldp
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NetworkServiceSet
+metadata:
+  name: network-services
+spec:
+  design:
+    tenants:
+    - name: CUSTOMER1
+      vrfs:
+      - address_families:
+        - vpn-ipv4
+        l3_interfaces:
+        - description: C1_L3_SERVICE
+          enabled: true
+          interfaces:
+          - Ethernet3.10
+          - Ethernet4.10
+          - Ethernet2
+          ip_addresses:
+          - 10.0.1.1/29
+          - 10.0.1.2/29
+          - 10.0.1.9/30
+          nodes:
+          - pe1
+          - pe2
+          - pe3
+          ospf:
+            enabled: true
+        name: C1_VRF1
+        ospf:
+          enabled: true
+          nodes:
+          - pe1
+          - pe2
+          - pe3
+        vrf_id: 10
+    - name: CUSTOMER2
+      vrfs:
+      - address_families:
+        - vpn-ipv4
+        bgp_peers:
+        - description: C2_ROUTER1
+          ip_address: 10.1.1.3
+          maximum_routes: 100
+          nodes:
+          - pe1
+          - pe2
+          remote_as: 65123
+          send_community: standard
+        - description: C2_ROUTER2
+          ip_address: 10.1.1.10
+          maximum_routes: 100
+          nodes:
+          - pe3
+          remote_as: 65124
+          send_community: standard
+        l3_interfaces:
+        - description: C2_L3_SERVICE
+          enabled: true
+          interfaces:
+          - Ethernet3.20
+          - Ethernet4.20
+          - Ethernet4
+          ip_addresses:
+          - 10.1.1.1/29
+          - 10.1.1.2/29
+          - 10.1.1.9/30
+          nodes:
+          - pe1
+          - pe2
+          - pe3
+        name: C2_VRF1
+        vrf_id: 20
+  appliesTo:
+    nodeSets:
+    - wan1-pe-routers
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: wan1
+spec:
+  design:
+    p:
+      defaults:
+        isis_system_id_prefix: '0000.0000'
+        loopback_ipv4_pool: 10.255.0.0/27
+        platform: cEOSLab
+      nodes:
+      - id: 1
+        mgmt_ip: 172.16.1.11/24
+        name: p1
+      - id: 2
+        mgmt_ip: 172.16.1.12/24
+        name: p2
+      - id: 3
+        mgmt_ip: 172.16.1.13/24
+        name: p3
+      - id: 4
+        mgmt_ip: 172.16.1.14/24
+        name: p4
+    pe:
+      defaults:
+        isis_system_id_prefix: '0000.0001'
+        loopback_ipv4_pool: 10.255.1.0/27
+        mpls_route_reflectors:
+        - rr1
+        - rr2
+        platform: cEOSLab
+        spanning_tree_mode: none
+        virtual_router_mac_address: 00:1c:73:00:dc:00
+      node_groups:
+      - group: WAN1-PE1-2
+        nodes:
+        - id: 1
+          mgmt_ip: 172.16.1.101/24
+          name: pe1
+        - id: 2
+          mgmt_ip: 172.16.1.102/24
+          name: pe2
+      - group: WAN1-PE3
+        nodes:
+        - id: 3
+          mgmt_ip: 172.16.1.103/24
+          name: pe3
+    rr:
+      defaults:
+        isis_system_id_prefix: '0000.0002'
+        loopback_ipv4_pool: 10.255.2.0/27
+        mpls_route_reflectors:
+        - rr1
+        - rr2
+        platform: cEOSLab
+        spanning_tree_mode: none
+      node_groups:
+      - group: WAN1_RR1-2
+        nodes:
+        - id: 1
+          mgmt_ip: 172.16.1.151/24
+          name: rr1
+        - id: 2
+          mgmt_ip: 172.16.1.152/24
+          name: rr2
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: SettingSet
+metadata:
+  name: wan1-settings
+spec:
+  design:
+    bgp_as: 65001
+    bgp_distance:
+      external_routes: 20
+      internal_routes: 200
+      local_routes: 200
+    core_interfaces:
+      p2p_links:
+      - id: 1
+        interfaces:
+        - Ethernet1
+        - Ethernet1
+        nodes:
+        - pe1
+        - p1
+        profile: core_profile
+      - id: 2
+        interfaces:
+        - Ethernet2
+        - Ethernet2
+        nodes:
+        - pe1
+        - p2
+        profile: core_profile
+      - id: 3
+        interfaces:
+        - Ethernet1
+        - Ethernet1
+        nodes:
+        - pe2
+        - p2
+        profile: core_profile
+      - id: 4
+        interfaces:
+        - Ethernet2
+        - Ethernet2
+        nodes:
+        - pe2
+        - p1
+        profile: core_profile
+      - id: 5
+        interfaces:
+        - Ethernet4
+        - Ethernet4
+        nodes:
+        - p1
+        - p2
+        profile: core_profile
+      - id: 6
+        interfaces:
+        - Ethernet3
+        - Ethernet3
+        nodes:
+        - rr1
+        - p1
+        profile: core_profile
+      - id: 7
+        interfaces:
+        - Ethernet2
+        - Ethernet2
+        nodes:
+        - rr1
+        - p3
+        profile: core_profile
+      - id: 8
+        interfaces:
+        - Ethernet4
+        - Ethernet4
+        nodes:
+        - rr1
+        - rr2
+        profile: core_profile
+      - id: 9
+        interfaces:
+        - Ethernet3
+        - Ethernet3
+        nodes:
+        - rr2
+        - p2
+        profile: core_profile
+      - id: 10
+        interfaces:
+        - Ethernet2
+        - Ethernet2
+        nodes:
+        - rr2
+        - p4
+        profile: core_profile
+      - id: 11
+        interfaces:
+        - Ethernet4
+        - Ethernet4
+        nodes:
+        - p3
+        - p4
+        profile: core_profile
+      - id: 12
+        interfaces:
+        - Ethernet1
+        - Ethernet1
+        nodes:
+        - pe3
+        - p3
+        profile: core_profile
+      - id: 13
+        interfaces:
+        - Ethernet3
+        - Ethernet3
+        nodes:
+        - pe3
+        - p4
+        profile: core_profile
+      p2p_links_ip_pools:
+      - ipv4_pool: 10.255.3.0/24
+        name: core_pool
+      p2p_links_profiles:
+      - ip_pool: core_pool
+        isis_authentication_key: $1c$sTNAlR6rKSw=
+        isis_authentication_mode: md5
+        isis_circuit_type: level-2
+        isis_metric: 50
+        name: core_profile
+    mgmt_gateway: 172.16.1.1
+  appliesTo:
+    all: true
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: wan1-pe-routers
+spec:
+  design:
+    type: pe
+  declares:
+  - pe1
+  - pe2
+  - pe3
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: wan1-p-routers
+spec:
+  design:
+    type: p
+  declares:
+  - p1
+  - p2
+  - p3
+  - p4
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: NodeSet
+metadata:
+  name: wan1-rr-routers
+spec:
+  design:
+    type: rr
+  declares:
+  - rr1
+  - rr2
+---
+apiVersion: avd.netclab.dev/v1alpha1
+kind: Fabric
+metadata:
+  name: isis-ldp-ipvpn
+spec:
+  fabricName: FABRIC
+  requires:
+  - kind: SettingSet
+    name: fabric
+  - kind: NetworkServiceSet
+    name: network-services
+  - kind: NodeSet
+    name: wan1
+  - kind: SettingSet
+    name: wan1-settings
+  - kind: NodeSet
+    name: wan1-pe-routers
+  - kind: NodeSet
+    name: wan1-p-routers
+  - kind: NodeSet
+    name: wan1-rr-routers
