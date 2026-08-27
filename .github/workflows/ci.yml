@@ -177,7 +177,7 @@ jobs:
           set -euo pipefail
           # Matches the version the e2e scenario was proven against locally.
           # renovate: datasource=github-releases depName=kubernetes-sigs/kind
-          curl -sSLo ./kind https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          curl -sSLo ./kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
           # XP_VERSION pins the CLI: install.sh otherwise takes whatever is
