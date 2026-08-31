@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "crossplane-function-sdk-python>=0.14.0",
-    "pyavd==6.3.0",
+    "pyavd==6.4.0",
     "pyyaml>=6.0.3",
 ]
 
