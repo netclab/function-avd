@@ -1,7 +1,7 @@
 # Runtime image for the AVD Fabric composite function.
 # Crossplane runs this image as the function's gRPC server (port 9443), passing
 # TLS_SERVER_CERTS_DIR so it serves securely in-cluster.
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # uv for reproducible, fast dependency install from the committed lockfile.
 COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /bin/
