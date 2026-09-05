@@ -29,7 +29,7 @@ addopts = "-m 'not e2e'"
 markers = ["e2e: requires a cluster from scripts/kind-up.sh with a fabric applied"]
 
 [build-system]
-requires = ["uv_build>=0.11.7,<0.12.0"]
+requires = ["uv_build>=0.12.10,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
