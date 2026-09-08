@@ -43,7 +43,7 @@ WITH_NETCLAB=${WITH_NETCLAB:-0}
 CNI_PLUGINS=${CNI_PLUGINS:-v1.9.1}
 # netclab-chart's README points at master; pinned here
 # renovate: datasource=github-releases depName=k8snetworkplumbingwg/multus-cni
-MULTUS=${MULTUS:-v4.3.0}
+MULTUS=${MULTUS:-v4.3.1}
 # 0.5.9 is the real floor: it bootstraps cEOS eAPI on https/443, the same
 # transport AVD renders. On 0.5.8 the bootstrap was http/6021, which the first
 # pushed config replaced -- taking eAPI with it.
