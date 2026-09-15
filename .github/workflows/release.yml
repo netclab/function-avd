@@ -124,7 +124,7 @@ jobs:
         run: |
           set -euo pipefail
           # renovate: datasource=github-releases depName=crossplane/crossplane
-          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
+          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.1 sh
           sudo mv ./crossplane /usr/local/bin/crossplane
           crossplane version --client
 
@@ -178,7 +178,7 @@ jobs:
         run: |
           set -euo pipefail
           # renovate: datasource=github-releases depName=crossplane/crossplane
-          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
+          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.1 sh
           sudo mv ./crossplane /usr/local/bin/crossplane
 
       - name: Build the Configuration package
@@ -215,7 +215,7 @@ jobs:
         run: |
           set -euo pipefail
           # renovate: datasource=github-releases depName=crossplane/crossplane
-          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
+          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.1 sh
           sudo mv ./crossplane /usr/local/bin/crossplane
 
       - name: Login to GHCR
@@ -281,7 +281,7 @@ jobs:
         run: |
           set -euo pipefail
           # renovate: datasource=github-releases depName=crossplane/crossplane
-          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
+          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.1 sh
           sudo mv ./crossplane /usr/local/bin/crossplane
 
       - name: Login to GHCR
