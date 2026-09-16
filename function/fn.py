@@ -17,7 +17,7 @@ The gRPC entrypoint lives in ``main.py`` (function-template-python layout).
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pyavd
 import yaml
@@ -56,7 +56,7 @@ def _normalize_numbers(obj):
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _observed_ready(observed_resource) -> bool:
@@ -84,7 +84,8 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
     def __init__(self) -> None:
         self.log = logging.get_logger()
 
-    async def RunFunction(  # noqa: N802 (gRPC method name)
+    # CamelCase because the gRPC servicer names the method, not this repo.
+    async def RunFunction(
         self, req: fnv1.RunFunctionRequest, _context
     ) -> fnv1.RunFunctionResponse:
         rsp = response.to(req)

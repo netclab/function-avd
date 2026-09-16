@@ -9,13 +9,12 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "crossplane-function-sdk-python>=0.14.0",
-    "pyavd==6.3.0",
+    "pyavd==6.4.0",
     "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
 avd-verify = "function.verify_example:main"
-avd-verify-xr = "function.verify_xr:main"
 avd-function = "function.main:main"
 avd-topology = "function.netclab_topology:main"
 

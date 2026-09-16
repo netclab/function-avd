@@ -10,7 +10,7 @@ devices you didn't touch, because AVD's facts are fabric-wide.
 
 The engine is [pyavd](https://pypi.org/project/pyavd/) (pure Python, no Ansible),
 wrapped in a Crossplane composite function. Built against
-[Arista AVD](https://github.com/aristanetworks/avd) v6.3.0, pinned as a submodule under
+[Arista AVD](https://github.com/aristanetworks/avd) v6.4.0, pinned as a submodule under
 `avd/` — a read-only reference, and the source of the golden configs the tests diff
 against.
 
@@ -84,7 +84,6 @@ provider's poll interval, the same rhythm that paces the rest of the model.
 
 ```bash
 uv run avd-verify           # pyavd vs AVD's own golden structured configs
-uv run avd-verify-xr        # same, through the Fabric-XR fold
 crossplane render examples/fabric/single-dc-l3ls.yaml \
   apis/fabric/composition.yaml dev/function-render.yaml
 ```
@@ -144,44 +143,32 @@ AVD's own output. Each bundled AVD example is rebuilt into `all_inputs` the way 
 would (per-host group_vars merge, in precedence order), run through pyavd, and deep-diffed
 against the example's checked-in `intended/structured_configs`.
 
-| Example | Devices | From Ansible inputs | Folded into one `Fabric` |
-|---------|--------:|:-------------------:|:------------------------:|
-| single-dc-l3ls | 8 | ✅ | ✅ |
-| single-dc-l3ls-ipv6 | 8 | ✅ | ✅ |
-| single-dc-multipod-l3ls | 10 | ✅ | ✅ |
-| dual-dc-l3ls | 16 | ✅ | ✅ |
-| l2ls-fabric | 6 | ✅ | ✅ |
-| isis-ldp-ipvpn | 9 | ✅ | ✅ |
-| campus-fabric | 10 | ✅ | ⏸ deferred |
-| cv-pathfinder | 17 | ⏸ deferred | ⏸ deferred |
+| Example | Devices | From Ansible inputs |
+|---------|--------:|:-------------------:|
+| single-dc-l3ls | 8 | ✅ |
+| single-dc-l3ls-ipv6 | 8 | ✅ |
+| single-dc-multipod-l3ls | 10 | ✅ |
+| dual-dc-l3ls | 16 | ✅ |
+| l2ls-fabric | 6 | ✅ |
+| isis-ldp-ipvpn | 9 | ✅ |
+| campus-fabric | 10 | ✅ |
+| cv-pathfinder | 17 | ⏸ deferred |
 
 Zero diffs everywhere it is ticked, across both group_vars layouts (per-group directories
-and flat files) and explicit and implicit `all` inventories. The fold
-(`function/xr.py`) unions each DC's node-type blocks and pushes per-DC/per-pod
-`defaults` down to node_groups/nodes (which override defaults in AVD), so multi-DC
-fabrics collapse losslessly into one document.
-
-The two deferrals are understood, not mysterious:
-
-- **campus-fabric** — leaves carry RADIUS in `aaa_settings`, spines don't: a
-  fabric-global key that genuinely differs by role, with no node-scoped equivalent.
-- **cv-pathfinder** — SD-WAN multi-site (a WAN gateway across 2 routers) plus
-  ansible-vault secrets.
-
-They live in `verify_xr.DEFERRED` as *strict* expected failures: if one starts folding,
-the suite fails and says to remove it, so a deferral can't quietly rot.
+and flat files) and explicit and implicit `all` inventories. The one deferral is
+understood, not mysterious: **cv-pathfinder** is SD-WAN multi-site (a WAN gateway across
+2 routers) plus ansible-vault secrets.
 
 ## Testing
 
 ```bash
-uv run pytest              # offline: engine fidelity, the XR fold, the Struct gotcha (~7s)
+uv run pytest              # offline: engine fidelity, the Struct gotcha (~8s)
 uv run pytest -m e2e       # live cluster: needs kind-up.sh + an applied fabric (~2min)
 ```
 
 | Path | Covers |
 |------|---------|
 | `tests/test_engine_fidelity.py` | the examples above reproduce golden structured config |
-| `tests/test_xr_fold.py` | the Ansible→XR fold, over every discovered example |
 | `tests/test_normalize_numbers.py` | the protobuf-`Struct` double→int coercion |
 | `tests/test_push.py` | the eAPI push Request builders: session contents, digest provenance |
 | `tests/test_e2e_device_layer.py` | drift/reclaim + steady-state idempotency, on a cluster |
@@ -357,18 +344,17 @@ The non-obvious things this repo encodes, each of which cost a debugging session
 | `function/fn.py` | the Crossplane composite function (FunctionRunner: Fabric + Device) |
 | `function/engine.py` | pyavd pipeline wrapper; `render_fabric_design` is the function's core |
 | `function/push.py` | eAPI push protocol: the provider-http `Request` builders |
-| `function/xr.py` | fold an Ansible example into a `Fabric` document (block union + defaults push-down) |
 | `function/ansible_inputs.py` | rebuild `all_inputs` from an Ansible example (inventory + group_vars merge) |
-| `function/verify_example.py`, `verify_xr.py` | golden-diff harnesses (`avd-verify`, `avd-verify-xr`) |
+| `function/verify_example.py` | golden-diff harness (`avd-verify`) |
 | `apis/fabric/`, `apis/device/` | XRD + Composition for each layer |
 | `apis/crossplane.yaml` | Configuration package metadata — `apis/` is that package's root |
 | `dev/` | `Function` manifests for local use (kind install, `crossplane render`); outside `apis/` so the Configuration build needs no exclusions |
-| `examples/fabric/` | example `Fabric` XRs (each reproduces golden) |
+| `examples/fabric/` | example `Fabric` XRs (each reproduces golden); committed files, no longer generated |
 | `examples/lab/` | kustomize overlay: the same fabric as run on the netclab lab |
 | `Dockerfile`, `package/crossplane.yaml` | function runtime image + package metadata |
 | `scripts/kind-up.sh`, `kind-down.sh` | reproducible cluster bring-up / teardown |
 | `.github/workflows/` | `ci.yml` (offline suite + dispatchable e2e), `release.yml` (GHCR + Upbound) |
-| `avd/` | AVD v6.3.0 submodule (read-only) |
+| `avd/` | AVD v6.4.0 submodule (read-only, shallow) |
 
 Versions are pinned deliberately: `pyavd` matches the `avd` submodule tag, because the
 golden configs come from the submodule — the two only ever move together, which is why
@@ -377,4 +363,4 @@ Renovate leaves both alone (`renovate.json`).
 ## License
 
 Apache-2.0. Builds on [Arista AVD](https://github.com/aristanetworks/avd), also
-Apache-2.0; the example fabrics are folded from AVD's own published examples.
+Apache-2.0; the example fabrics come from AVD's own published examples.

@@ -50,7 +50,7 @@ class AnsibleInventory:
         self.depth: dict[str, int] = {ALL_GROUP: 0}
 
     @classmethod
-    def from_file(cls, inventory_path: Path) -> "AnsibleInventory":
+    def from_file(cls, inventory_path: Path) -> AnsibleInventory:
         data = _yaml_load(inventory_path)
         inv = cls()
         if ALL_GROUP in data:

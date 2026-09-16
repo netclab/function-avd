@@ -34,6 +34,8 @@ jobs:
       # bump can't land without its lock.
       - run: uv sync --locked
 
+      - run: uvx ruff check
+
       - run: uv run pytest -q
 
   # `xpkg build` is not a lint: it parses every YAML under --package-root and

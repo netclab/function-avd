@@ -3,13 +3,17 @@
   "extends": ["config:recommended"],
   "packageRules": [
     {
-      "description": "pyavd is pinned to the version of the avd submodule (v6.3.0): the golden structured configs the tests diff against come from that submodule, so bumping either one alone turns the suite red. Upgrading AVD means moving both together and reviewing the golden diff by hand.",
-      "matchPackageNames": ["pyavd"],
-      "enabled": false
+      "description": "pyavd renders and the avd submodule carries the goldens the render is diffed against, so the two move in one PR or the suite compares two AVD releases. Grouped rather than disabled: an AVD release should still be offered, and reviewing the golden diff is what the PR is for. `branch` in .gitmodules is the tag, so this offers releases and not commits.",
+      "matchManagers": ["git-submodules", "pep621"],
+      "matchPackageNames": ["avd", "pyavd"],
+      "groupName": "avd"
     }
   ],
   "git-submodules": {
-    "description": "Same coupling as pyavd, from the other side: the avd submodule carries the golden configs. Kept off explicitly rather than by default, so enabling it stays a deliberate act.",
+    "enabled": true
+  },
+  "pyenv": {
+    "description": ".python-version is the requires-python floor, not a version to keep current.",
     "enabled": false
   },
   "customManagers": [

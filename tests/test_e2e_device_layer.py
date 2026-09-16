@@ -169,6 +169,7 @@ def never_left_paused():
          "crossplane.io/paused-", "--overwrite"],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 

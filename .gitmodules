@@ -1,3 +1,5 @@
 [submodule "avd"]
 	path = avd
 	url = https://github.com/aristanetworks/avd.git
+	shallow = true
+	branch = v6.4.0

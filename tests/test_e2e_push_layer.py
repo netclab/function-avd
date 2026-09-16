@@ -98,6 +98,7 @@ def deployed() -> tuple[str, str]:
         ["kubectl", "--context", CTX, "-n", NS, "get", "pod", HOSTNAME],
         capture_output=True,
         text=True,
+        check=False,
     )
     if probe.returncode != 0:
         pytest.skip(f"no cEOS pod {HOSTNAME} -- bring the lab up with WITH_NETCLAB=1")
