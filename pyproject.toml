@@ -14,9 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-avd-verify = "function.verify_example:main"
 avd-function = "function.main:main"
-avd-topology = "function.netclab_topology:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
