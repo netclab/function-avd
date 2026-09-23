@@ -35,3 +35,7 @@ build-backend = "uv_build"
 # name and look for it under src/.
 module-root = ""
 module-name = "function"
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["avd"]
