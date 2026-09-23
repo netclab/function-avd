@@ -1,0 +1,26 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: fabricinputs.avd.netclab.dev
+spec:
+  scope: Namespaced
+  group: avd.netclab.dev
+  names:
+    kind: FabricInput
+    plural: fabricinputs
+  defaultCompositionRef:
+    name: fabricinput-avd
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              description: >-
+                The variables of one inventory scope -- a group or hosts -- as the user's
+                group_vars or host_vars hold them.
+              x-kubernetes-preserve-unknown-fields: true

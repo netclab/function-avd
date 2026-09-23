@@ -1,0 +1,85 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: fabrics.avd.netclab.dev
+spec:
+  scope: Namespaced
+  group: avd.netclab.dev
+  names:
+    kind: Fabric
+    plural: fabrics
+  defaultCompositionRef:
+    name: fabric-avd
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              description: >-
+                One AVD fabric, as the user's Ansible holds it: the play, ansible.cfg, the
+                inventory's groups, and the files it reads.
+              x-kubernetes-preserve-unknown-fields: true
+              properties:
+                inputs:
+                  type: array
+                  description: >-
+                    The FabricInputs in this namespace that make up the fabric. It is
+                    rendered only once every one is found.
+                  items:
+                    type: string
+              required:
+                - inputs
+            status:
+              type: object
+              properties:
+                inputs:
+                  type: array
+                  description: The FabricInputs the last render read.
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      generation:
+                        type: integer
+                        format: int64
+                configMaps:
+                  type: array
+                  description: The ConfigMaps the last render read, named by spec.pools and spec.files.
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      resourceVersion:
+                        type: string
+                missing:
+                  type: object
+                  description: What the spec names and is not found; the render waits for it.
+                  properties:
+                    inputs:
+                      type: array
+                      items:
+                        type: string
+                    configMaps:
+                      type: array
+                      description: A key that is absent, or with no key, a ConfigMap that is.
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          key:
+                            type: string
+                unlisted:
+                  type: array
+                  description: >-
+                    FabricInputs labelled avd.netclab.dev/fabric for this Fabric and not in
+                    spec.inputs; not rendered.
+                  items:
+                    type: string

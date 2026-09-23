@@ -1,0 +1,91 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: devices.avd.netclab.dev
+spec:
+  scope: Namespaced
+  group: avd.netclab.dev
+  names:
+    kind: Device
+    plural: devices
+  defaultCompositionRef:
+    name: device-avd
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              description: >-
+                One device of a fabric, as its Fabric composes it: the structured
+                configuration eos_designs wrote for it, and where its eAPI is.
+              properties:
+                structuredConfig:
+                  type: object
+                  description: >-
+                    The device's structured configuration, eos_cli_config_gen's input.
+                    The eos.cfg rendered from it is what the device is given.
+                  x-kubernetes-preserve-unknown-fields: true
+                eapi:
+                  type: object
+                  description: >-
+                    The device's eAPI, as its Ansible variables name it. Absent, the
+                    configuration is rendered and not pushed.
+                  properties:
+                    url:
+                      type: string
+                      minLength: 1
+                    insecureSkipTLSVerify:
+                      type: boolean
+                    secretRef:
+                      type: object
+                      description: The key holding base64 of user:password.
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                        key:
+                          type: string
+                          minLength: 1
+                      required:
+                        - name
+                        - key
+                  required:
+                    - url
+                    - secretRef
+              required:
+                - structuredConfig
+            status:
+              type: object
+              properties:
+                configHash:
+                  type: string
+                  description: The hash of the eos.cfg rendered from spec.structuredConfig.
+                invalid:
+                  type: array
+                  description: >-
+                    What validating spec.structuredConfig found; while it holds anything,
+                    nothing is pushed.
+                  items:
+                    type: string
+                error:
+                  type: string
+                  description: >-
+                    The error eAPI answered the last push with, which the Request reports
+                    as a success.
+                deployed:
+                  type: object
+                  description: What the last push left on the device.
+                  properties:
+                    configHash:
+                      type: string
+                      description: The configuration's hash, as the device's marker names it.
+                    digest:
+                      type: string
+                      description: >-
+                        The running-config digest recorded right after the push; a device
+                        whose digest differs is pushed again.
