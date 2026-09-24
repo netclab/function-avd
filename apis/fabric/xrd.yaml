@@ -32,6 +32,93 @@ spec:
                     rendered only once every one is found.
                   items:
                     type: string
+                extraVars:
+                  type: object
+                  description: >-
+                    ansible-playbook -e, outranking the repository's own variables.
+                  x-kubernetes-preserve-unknown-fields: true
+                vaultPassword:
+                  type: object
+                  description: >-
+                    The Secret in this namespace holding the vault password, where the
+                    repository's ansible.cfg names a file for it.
+                  properties:
+                    secretRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                        key:
+                          type: string
+                          minLength: 1
+                      required:
+                        - name
+                        - key
+                  required:
+                    - secretRef
+                pools:
+                  type: array
+                  description: The pool files eos_designs reads and rewrites, each from a ConfigMap key.
+                  items:
+                    type: object
+                    properties:
+                      configMapRef:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                            minLength: 1
+                          key:
+                            type: string
+                            minLength: 1
+                        required:
+                          - name
+                          - key
+                      path:
+                        type: string
+                        minLength: 1
+                        description: The file's path, relative to the root beside names.
+                      beside:
+                        type: string
+                        enum:
+                          - inventory
+                          - playbook
+                    required:
+                      - configMapRef
+                      - path
+                      - beside
+                files:
+                  type: array
+                  description: The files the repository names by path, each from a ConfigMap key.
+                  items:
+                    type: object
+                    properties:
+                      configMapRef:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                            minLength: 1
+                          key:
+                            type: string
+                            minLength: 1
+                        required:
+                          - name
+                          - key
+                      path:
+                        type: string
+                        minLength: 1
+                        description: The file's path, relative to the root beside names.
+                      beside:
+                        type: string
+                        enum:
+                          - inventory
+                          - playbook
+                    required:
+                      - configMapRef
+                      - path
+                      - beside
               required:
                 - inputs
             status:
@@ -83,3 +170,8 @@ spec:
                     spec.inputs; not rendered.
                   items:
                     type: string
+                error:
+                  type: string
+                  description: >-
+                    What the last render failed with, empty after one that succeeded. While
+                    it holds anything, the Devices keep the structured configuration they have.
