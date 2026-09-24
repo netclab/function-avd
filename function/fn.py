@@ -7,6 +7,7 @@ own module and see plain dicts; this module moves them in and out of the request
 from __future__ import annotations
 
 import asyncio
+import time
 
 from crossplane.function import logging, request, resource, response
 from crossplane.function.proto.v1 import run_function_pb2 as fnv1
@@ -28,10 +29,20 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
             for key, res in req.observed.resources.items()
         }
         kind = composite.get("kind")
+        meta = composite.get("metadata") or {}
+        self.log.debug(
+            "called",
+            kind=kind,
+            namespace=meta.get("namespace"),
+            name=meta.get("name"),
+            required=len(req.required_resources),
+        )
         if kind == "Device":
             self._device(rsp, composite, observed)
         elif kind == "Fabric":
             await self._fabric(req, rsp, composite, observed)
+        elif kind == "FabricInput":
+            pass  # the Fabric reads it; it composes nothing
         else:
             response.fatal(rsp, f"no reconcile for kind {kind!r}")
         return rsp
@@ -63,10 +74,23 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
             key: [numbers(doc) for doc in request.get_required_resources(req, key)]
             for key in wanted
         }
+        meta = composite.get("metadata") or {}
+
+        def render(fab: dict, read: fabric.Read) -> fabric.Render:
+            started = time.monotonic()
+            rendered = fabric.render(fab, read)
+            self.log.info(
+                "rendered",
+                namespace=meta.get("namespace"),
+                name=meta.get("name"),
+                hosts=len(rendered.structured),
+                seconds=round(time.monotonic() - started, 1),
+                problem=rendered.problem,
+            )
+            return rendered
+
         # A render is seconds of Ansible: off the event loop, so other calls are served.
-        composed = await asyncio.to_thread(
-            fabric.compose, composite, required, observed, fabric.render
-        )
+        composed = await asyncio.to_thread(fabric.compose, composite, required, observed, render)
         _write(rsp, composed)
 
 

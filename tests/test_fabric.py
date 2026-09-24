@@ -367,6 +367,13 @@ def test_without_extra_vars_only_the_renders_own_are_given(tmp_path):
     assert command.count("-e") == 1
 
 
+def test_a_fabric_input_composes_nothing():
+    rsp = run(an_input(f"{NAME}-fabric"))
+
+    assert not rsp.desired.resources
+    assert not rsp.results
+
+
 @pytest.mark.parametrize("host", ["dc1-leaf1a", "DC1.POD1.LEAF2A"])
 def test_a_device_is_named_as_emit_names_an_input(host):
     assert fabric.device_name(NAME, host) == f"{NAME}-{host.lower().replace('.', '-')}"

@@ -1,0 +1,13 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: fabricinput-avd
+spec:
+  compositeTypeRef:
+    apiVersion: avd.netclab.dev/v1alpha1
+    kind: FabricInput
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: netclab-function-avd
