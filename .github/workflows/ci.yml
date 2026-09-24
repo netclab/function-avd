@@ -58,8 +58,8 @@ jobs:
       - name: Install crossplane CLI
         run: |
           set -euo pipefail
-          # renovate: datasource=github-releases depName=crossplane/crossplane
-          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
+          # renovate: datasource=github-releases depName=crossplane/cli
+          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.5.0 sh
           sudo mv ./crossplane /usr/local/bin/crossplane
 
       - name: Build the Configuration package
@@ -184,8 +184,8 @@ jobs:
           sudo mv ./kind /usr/local/bin/kind
           # XP_VERSION pins the CLI: install.sh otherwise takes whatever is
           # current, so this job would drift onto a different CLI with no commit.
-          # renovate: datasource=github-releases depName=crossplane/crossplane
-          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.4.0 sh
+          # renovate: datasource=github-releases depName=crossplane/cli
+          curl -sfL "https://cli.crossplane.io/install.sh" | XP_VERSION=v2.5.0 sh
           sudo mv ./crossplane /usr/local/bin/crossplane
           # kind-up.sh needs helm; the runner image ships it, but don't rely on that.
           command -v helm >/dev/null || \
