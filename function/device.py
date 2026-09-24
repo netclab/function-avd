@@ -15,12 +15,11 @@ stay as they are, and `status.invalid` says why.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
 
 import pyavd
 
 from . import push
-from .structs import kept
+from .structs import Composed, Desired, unchanged
 
 CONFIG_MAP = "eos-cfg"
 REQUEST = "request"
@@ -29,20 +28,6 @@ EOS_CFG_KEY = "eos.cfg"
 
 # Hex characters of the configHash: the marker alias on the device is named after it.
 _HASH_LEN = 16
-
-
-@dataclass(frozen=True)
-class Desired:
-    """A composed resource to return, and whether it is ready."""
-
-    resource: dict
-    ready: bool
-
-
-@dataclass(frozen=True)
-class Composed:
-    status: dict
-    resources: dict[str, Desired] = field(default_factory=dict)
 
 
 def config_hash(eos_cli: str) -> str:
@@ -142,15 +127,4 @@ def _unchanged(prev: dict, observed: dict[str, dict], refused: list[str]) -> Com
         "error": prev.get("error", ""),
         **{key: prev[key] for key in ("configHash", "deployed") if key in prev},
     }
-    return Composed(
-        status=status,
-        resources={key: Desired(kept(res), ready=_ready(res)) for key, res in observed.items()},
-    )
-
-
-def _ready(observed: dict) -> bool:
-    """A kept resource's readiness: its Ready condition, or none to wait for."""
-    conditions = (observed.get("status") or {}).get("conditions")
-    if conditions is None:
-        return True
-    return any(c.get("type") == "Ready" and c.get("status") == "True" for c in conditions)
+    return Composed(status=status, resources=unchanged(observed))

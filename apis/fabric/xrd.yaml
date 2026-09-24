@@ -175,3 +175,9 @@ spec:
                   description: >-
                     What the last render failed with, empty after one that succeeded. While
                     it holds anything, the Devices keep the structured configuration they have.
+                rendered:
+                  type: string
+                  description: >-
+                    The hash of everything the last render read: the spec, the FabricInputs,
+                    the ConfigMaps and the vault password. While it is the same, nothing is
+                    rendered again.
