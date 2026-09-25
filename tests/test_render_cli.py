@@ -7,16 +7,21 @@ runs here, the render engine in Docker, at the Crossplane a cluster runs -- neve
 `stable`, which moves with no commit here. The CLI is released on its own, under its
 own numbers, and only drives it.
 
+With FUNCTION_IMAGE set, the function is served from that image instead of this checkout,
+as Crossplane runs it: uid 2000, with no home of its own.
+
 Skipped without the CLI, Docker, or the `avd` submodule.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import socket
 import subprocess
 import sys
 import time
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -26,9 +31,13 @@ ROOT = Path(__file__).parent.parent
 REPO = ROOT / "avd" / "ansible_collections" / "arista" / "avd" / "examples" / "single-dc-l3ls"
 NS = "l3ls"
 
-CROSSPLANE = shutil.which("crossplane")
+TOOL = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["function-avd"]
+
+CROSSPLANE_CLI = shutil.which("crossplane")
 # Crossplane itself, as the cluster's helm chart installs it; not the CLI's XP_VERSION.
-ENGINE = "v2.4.2"
+CROSSPLANE_VERSION = TOOL["crossplane"]
+
+IMAGE = os.environ.get("FUNCTION_IMAGE")
 
 
 def _docker() -> bool:
@@ -39,7 +48,7 @@ def _docker() -> bool:
 
 
 pytestmark = pytest.mark.skipif(
-    CROSSPLANE is None or not REPO.is_dir() or not _docker(),
+    CROSSPLANE_CLI is None or not REPO.is_dir() or not _docker(),
     reason="needs the crossplane CLI, Docker and the avd submodule",
 )
 
@@ -50,21 +59,28 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
+def _serve(port: int, name: str) -> list[str]:
+    # Every interface, as the function's own default: the engine calls it from a
+    # container, and a loopback address is the container's own.
+    args = ["--insecure", "--debug", "--address", f"0.0.0.0:{port}"]
+    if IMAGE is None:
+        return [sys.executable, "-m", "function.main", *args]
+    # The host's network, not a published port: Docker listens on a published port before
+    # the function does, and the wait below would end too early.
+    docker = ["docker", "run", "--rm", "--init", "--name", name, "--network", "host"]
+    return [*docker, "--user", "2000:2000", IMAGE, *args]
+
+
 @pytest.fixture(scope="module")
 def served(tmp_path_factory):
     """The function listening on a free port, its log, and the Function pointing at it."""
     work = tmp_path_factory.mktemp("served")
     port = _free_port()
+    name = f"function-avd-{port}"
     log = work / "function.log"
     with log.open("w") as out:
         server = subprocess.Popen(
-            # Every interface, as the function's own default: the engine calls it from
-            # a container, and a loopback address is the container's own.
-            [sys.executable, "-m", "function.main", "--insecure", "--debug"]
-            + ["--address", f"0.0.0.0:{port}"],
-            cwd=ROOT,
-            stdout=out,
-            stderr=subprocess.STDOUT,
+            _serve(port, name), cwd=ROOT, stdout=out, stderr=subprocess.STDOUT
         )
     try:
         deadline = time.monotonic() + 30
@@ -95,6 +111,8 @@ def served(tmp_path_factory):
         )
         yield function, log
     finally:
+        if IMAGE is not None:
+            subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)
         server.terminate()
         server.wait(timeout=10)
 
@@ -105,8 +123,12 @@ def render(served, work: Path, xr: dict, composition: str, required=(), observed
     files = {"xr.yaml": [xr], "required.yaml": list(required), "observed.yaml": list(observed)}
     for name, docs in files.items():
         (work / name).write_text(yaml.safe_dump_all(docs))
-    command = [CROSSPLANE, "composition", "render", str(work / "xr.yaml")]
-    command += [str(ROOT / composition), str(function), f"--crossplane-version={ENGINE}"]
+    command = [CROSSPLANE_CLI, "composition", "render", str(work / "xr.yaml")]
+    command += [
+        str(ROOT / composition),
+        str(function),
+        f"--crossplane-version={CROSSPLANE_VERSION}",
+    ]
     if required:
         command.append(f"--required-resources={work / 'required.yaml'}")
     if observed:

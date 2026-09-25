@@ -1,13 +1,13 @@
 [project]
 name = "function-avd"
 version = "0.2.0"
-description = "Living AVD model driven by Crossplane XRs (Fabric -> Device composite function)"
+description = "A Crossplane composition function that renders a fabric with Arista AVD and pushes each device's config"
 authors = [
     { name = "mbakalarski", email = "64490638+mbakalarski@users.noreply.github.com" }
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "click>=8",
+    "click>=8.5.0",
     "crossplane-function-sdk-python>=0.15.1",
     "netadopt[avd]>=0.7.0",
     "pyavd==6.4.0",
@@ -17,25 +17,24 @@ dependencies = [
 [project.scripts]
 avd-function = "function.main:main"
 
-[dependency-groups]
-dev = ["pytest>=8.0"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-# e2e needs a live cluster, so it is opt-in: `uv run pytest -m e2e`.
-addopts = "-m 'not e2e'"
-markers = ["e2e: requires a cluster from scripts/kind-up.sh with a fabric applied"]
-
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-# crossplane/function-template-python layout: a flat `function/` package at the
-# repo root. The backend would otherwise derive `function_avd` from the project
-# name and look for it under src/.
 module-root = ""
 module-name = "function"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.function-avd]
+crossplane = "v2.4.2"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100

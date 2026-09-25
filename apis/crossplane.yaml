@@ -1,0 +1,36 @@
+apiVersion: meta.pkg.crossplane.io/v1
+kind: Configuration
+metadata:
+  name: configuration-avd
+  annotations:
+    meta.crossplane.io/maintainer: netclab.dev
+    meta.crossplane.io/source: github.com/netclab/function-avd
+    meta.crossplane.io/license: Apache-2.0
+    meta.crossplane.io/description: >-
+      The avd.netclab.dev API -- Fabric, FabricInput and Device -- served by function-avd.
+    meta.crossplane.io/readme: |
+      The `avd.netclab.dev` API and its Compositions, served by
+      [function-avd](https://marketplace.upbound.io/functions/netclab/function-avd):
+
+      * `Fabric` -- one AVD fabric: the play, the inventory groups and `ansible.cfg`,
+        and the ConfigMaps and `FabricInput`s it lists;
+      * `FabricInput` -- the variables for one group, or for hosts;
+      * `Device` -- one host's structured config, and where its eAPI is.
+
+      [netadopt](https://github.com/netclab/netadopt) writes them from an existing AVD
+      repository. Installing this installs function-avd and provider-http. From the
+      examples, create the Function in `functions.yaml` first: it runs with the requests
+      and limits a fabric's render needs. Then `providerconfig.yaml`: a Device's `Request`
+      names no provider config, and takes provider-http's `default`.
+spec:
+  crossplane:
+    version: ">=v2.4.0"
+  dependsOn:
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Function
+    package: xpkg.upbound.io/netclab/function-avd
+    version: v0.2.0
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Provider
+    package: xpkg.upbound.io/crossplane-contrib/provider-http
+    version: ">=v1.0.14"

@@ -1,5 +1,3 @@
-# Function package metadata (the xpkg's "meta" layer). The runtime image is
-# embedded at build time via `crossplane xpkg build --embed-runtime-image`.
 apiVersion: meta.pkg.crossplane.io/v1
 kind: Function
 metadata:
@@ -9,26 +7,22 @@ metadata:
     meta.crossplane.io/source: github.com/netclab/function-avd
     meta.crossplane.io/license: Apache-2.0
     meta.crossplane.io/description: >-
-      Expands an avd.netclab.dev Fabric into per-device AVD structured configs.
-    # Renders as the body of the Marketplace page; without it the listing is
-    # a bare title. There is no Inputs section by design -- this function takes
-    # no function input, it reads the Fabric/Device XR spec.
+      Runs Arista AVD in Crossplane: a Fabric renders into its Devices, and each Device
+      pushes its config over eAPI.
     meta.crossplane.io/readme: |
-      This composition function runs [pyavd](https://pypi.org/project/pyavd/)
-      inside Crossplane. It serves two composite kinds from the
-      `avd.netclab.dev` API group:
+      This composition function runs [Arista AVD](https://avd.arista.com) in Crossplane,
+      for the `avd.netclab.dev` API that
+      [configuration-avd](https://marketplace.upbound.io/configurations/netclab/configuration-avd)
+      installs:
 
-      * a `Fabric` XR is expanded through the fabric-wide AVD pipeline into one
-        `Device` XR per host, each carrying that device's structured config;
-      * a `Device` XR validates and renders its own structured config and EOS
-        CLI, publishes them as a ConfigMap, and -- with `spec.push` set --
-        composes a provider-http `Request` that keeps the box's running config
-        in sync over eAPI.
+      * a `Fabric` runs AVD's `eos_designs` role over the repository its `FabricInput`s
+        and ConfigMaps rebuild, and composes one `Device` per host with that host's
+        structured config;
+      * a `Device` renders its `eos.cfg` with pyavd, and composes a provider-http
+        `Request` that pushes it over eAPI.
 
-      The function takes no function input: everything comes from the XR, so
-      the XRDs are the API. See the
-      [README](https://github.com/netclab/function-avd) for the XRD schemas,
-      a runnable kind lab, and the design notes.
+      [netadopt](https://github.com/netclab/netadopt) writes these objects from an
+      existing AVD repository. The function takes no input of its own.
 spec:
   capabilities:
   - composition

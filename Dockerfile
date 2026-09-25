@@ -11,9 +11,8 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # The collections netadopt pins for the AVD it is tested on, with the Ansible the venv holds.
-RUN .venv/bin/python -c "import sys; from pathlib import Path; \
-from netadopt.api import ensure_collections, resolve_ansible; \
-sys.exit(ensure_collections(resolve_ansible(), root=Path('/opt/avd-collections')).problem)"
+RUN .venv/bin/python -c "import sys; from pathlib import Path; import netadopt.api as api; \
+sys.exit(api.ensure_collections(api.resolve_ansible(), root=Path('/opt/avd-collections')).problem)"
 
 COPY function ./function
 RUN uv sync --frozen --no-dev --no-editable
