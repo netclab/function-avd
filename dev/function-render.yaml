@@ -1,8 +1,0 @@
-apiVersion: pkg.crossplane.io/v1
-kind: Function
-metadata:
-  name: netclab-function-avd
-  annotations:
-    render.crossplane.io/runtime: Development
-spec:
-  package: xpkg.crossplane.io/netclab/function-avd:v0.0.0

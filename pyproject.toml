@@ -1,6 +1,6 @@
 [project]
 name = "function-avd"
-version = "0.1.6"
+version = "0.2.0"
 description = "Living AVD model driven by Crossplane XRs (Fabric -> Device composite function)"
 authors = [
     { name = "mbakalarski", email = "64490638+mbakalarski@users.noreply.github.com" }
@@ -27,7 +27,7 @@ addopts = "-m 'not e2e'"
 markers = ["e2e: requires a cluster from scripts/kind-up.sh with a fabric applied"]
 
 [build-system]
-requires = ["uv_build>=0.11.7,<0.12.0"]
+requires = ["uv_build>=0.12.10,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

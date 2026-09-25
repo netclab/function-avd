@@ -1,23 +1,42 @@
-# Runtime image for the AVD Fabric composite function.
-# Crossplane runs this image as the function's gRPC server (port 9443), passing
-# TLS_SERVER_CERTS_DIR so it serves securely in-cluster.
-FROM python:3.12-slim
+FROM python:3.12-slim AS build
 
-# uv for reproducible, fast dependency install from the committed lockfile.
-COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /bin/
 
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never
 
-# Install dependencies first (cached layer), then the project itself.
-COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-install-project --no-dev
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+# The collections netadopt pins for the AVD it is tested on, with the Ansible the venv holds.
+RUN .venv/bin/python -c "import sys; from pathlib import Path; \
+from netadopt.api import ensure_collections, resolve_ansible; \
+sys.exit(ensure_collections(resolve_ansible(), root=Path('/opt/avd-collections')).problem)"
+
 COPY function ./function
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --no-editable
+
+
+FROM python:3.12-slim
+
+# The base image ships the standard library without bytecode, and uid 2000 cannot write it:
+# every Python that Ansible starts would compile it again.
+RUN python -m compileall -q /usr/local/lib/python3.12
+
+# Changed only when AVD moves, so before the venv.
+COPY --from=build /opt/avd-collections /opt/avd-collections
+COPY --from=build /app/.venv /app/.venv
+
+# A Fabric's request carries every Device's structured config, up to 68 KiB each in AVD's
+# examples: the SDK's 4 MB holds about 60 of them.
+ENV AVD_COLLECTIONS=/opt/avd-collections \
+    MAX_RECV_MESSAGE_SIZE=64
+
+# Crossplane runs the function as uid 2000, whose home is /: Ansible makes ~/.ansible even for
+# --version.
+ENV HOME=/tmp
 
 EXPOSE 9443
-# Call the installed console script directly. Crossplane runs the function as a
-# non-root user, so avoid `uv run` (it would try to write a cache under $HOME).
-ENTRYPOINT ["/app/.venv/bin/avd-function", "--address", "0.0.0.0:9443"]
+ENTRYPOINT ["/app/.venv/bin/avd-function"]

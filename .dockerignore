@@ -3,7 +3,7 @@
 avd/
 .git/
 .venv/
-examples/
+example/
 apis/
 package/
 **/__pycache__/
