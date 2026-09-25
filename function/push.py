@@ -202,6 +202,24 @@ def error_from_observed(observed_request: dict, config_hash: str) -> str | None:
     return ": ".join(said)
 
 
+# Begins the error of a Request provider-http could not reconcile, eAPI's never: an
+# error so marked is current only, and a Device never carries it over.
+PROVIDER_ERROR = "provider-http: "
+
+
+def provider_error(observed_request: dict) -> str | None:
+    """provider-http's message while its last reconcile of the Request failed.
+
+    The address unreachable, the credentials missing: no response of any revision says
+    so, only the Request's Synced condition.
+    """
+    for condition in (observed_request.get("status") or {}).get("conditions") or []:
+        if condition.get("type") == "Synced" and condition.get("status") == "False":
+            said = condition.get("message") or condition.get("reason") or "not synced"
+            return PROVIDER_ERROR + said
+    return None
+
+
 def request_object(
     *,
     name: str,

@@ -76,7 +76,8 @@ spec:
                   type: string
                   description: >-
                     The error eAPI answered the last push with, which the Request reports
-                    as a success.
+                    as a success; or, beginning "provider-http: ", why the Request could
+                    not be reconciled at all, the device unreachable among them.
                 deployed:
                   type: object
                   description: What the last push left on the device.

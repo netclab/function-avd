@@ -169,6 +169,39 @@ def test_an_error_stands_through_an_observe_of_its_own_revision_only(leaf):
     assert other.status["error"] == ""
 
 
+UNREACHABLE = "create failed: dial tcp 172.16.1.101:443: connect: connection timed out"
+
+
+def unsynced(request: dict, message: str) -> dict:
+    """`request` as provider-http leaves it when its last reconcile failed."""
+    conditions = [{"type": "Synced", "status": "False", "message": message}]
+    return {**request, "status": {**request["status"], "conditions": conditions}}
+
+
+def test_an_unreachable_device_is_the_error_over_an_older_response(leaf):
+    structured_config, eos_cfg = leaf
+    rev = push.revision(device.config_hash(eos_cfg))
+    observed = {device.REQUEST: unsynced(answered(REFUSED, f"push-{rev}"), UNREACHABLE)}
+
+    composed = device.compose(a_device(structured_config), observed)
+
+    assert composed.status["error"] == f"provider-http: {UNREACHABLE}"
+    assert not composed.resources[device.REQUEST].ready
+
+
+def test_the_providers_error_goes_once_the_device_answers(leaf):
+    structured_config, eos_cfg = leaf
+    new_hash = device.config_hash(eos_cfg)
+    rev = push.revision(new_hash)
+    # Answered an observe, in step: no push follows to clear the error.
+    observed = {device.REQUEST: answered(observe_answer(rev, "d1"), f"observe-{rev}")}
+    was = {"configHash": new_hash, "error": f"provider-http: {UNREACHABLE}"}
+
+    composed = device.compose(a_device(structured_config, status=was), observed)
+
+    assert composed.status["error"] == ""
+
+
 def test_an_invalid_structured_config_keeps_what_was_composed(leaf):
     structured_config, _eos_cfg = leaf
     good = device.compose(a_device(structured_config), {})

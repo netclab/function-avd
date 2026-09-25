@@ -312,7 +312,25 @@ def test_a_changed_input_renders_again():
     assert renderer.calls == 2
 
 
-def run(composite: dict, required: dict | None = None) -> fnv1.RunFunctionResponse:
+def test_an_input_crossplane_composed_does_not_render_again():
+    fab = a_fabric()
+    renderer = Renderer(rendered())
+    first = fabric.compose(fab, found(fab), {}, renderer)
+    required = found(fab)
+    # What Crossplane writes into a FabricInput once it composes it, an XR as it is.
+    required[f"input:{NAME}-dc1"][0]["spec"]["crossplane"] = {
+        "compositionRef": {"name": "fabricinput-avd"}
+    }
+
+    again = fabric.compose(a_fabric(status=first.status), required, {}, renderer)
+
+    assert renderer.calls == 1
+    assert again.status["rendered"] == first.status["rendered"]
+
+
+def run(
+    composite: dict, required: dict | None = None, runner: FunctionRunner | None = None
+) -> fnv1.RunFunctionResponse:
     req = fnv1.RunFunctionRequest(
         observed=fnv1.State(composite=fnv1.Resource(resource=resource.dict_to_struct(composite)))
     )
@@ -320,7 +338,40 @@ def run(composite: dict, required: dict | None = None) -> fnv1.RunFunctionRespon
         req.required_resources[key].items.extend(
             fnv1.Resource(resource=resource.dict_to_struct(doc)) for doc in docs
         )
-    return asyncio.run(FunctionRunner().RunFunction(req, None))
+    return asyncio.run((runner or FunctionRunner()).RunFunction(req, None))
+
+
+def composed_names(rsp: fnv1.RunFunctionResponse) -> list[str]:
+    return sorted(rsp.desired.resources)
+
+
+def test_a_call_again_before_the_status_is_written_does_not_render_again(monkeypatch):
+    # Crossplane calls again within one reconcile when a required resource's metadata
+    # moved between its seed and its fetch; the Fabric's status is written only after.
+    renderer = Renderer(rendered())
+    monkeypatch.setattr(fabric, "render", renderer)
+    runner = FunctionRunner()
+    fab = a_fabric()
+
+    first = run(fab, found(fab), runner)
+    again = run(fab, found(fab), runner)
+
+    assert renderer.calls == 1
+    assert composed_names(again) == composed_names(first) != []
+
+
+def test_a_call_with_changed_content_renders_again(monkeypatch):
+    renderer = Renderer(rendered())
+    monkeypatch.setattr(fabric, "render", renderer)
+    runner = FunctionRunner()
+    fab = a_fabric()
+    changed = found(fab)
+    changed[f"input:{NAME}-dc1"][0]["spec"]["design"] = {"a": 2}
+
+    run(fab, found(fab), runner)
+    run(fab, changed, runner)
+
+    assert renderer.calls == 2
 
 
 def test_the_runner_asks_first_and_changes_nothing_until_answered():

@@ -210,19 +210,24 @@ def content_hash(fabric: dict, read: Read, pools: dict[tuple[str, str], str] | N
     """A hash of everything a render reads -- with `pools`, as the render left them.
 
     Content only, never a resourceVersion: the Fabric rewrites its pool ConfigMap
-    itself, and a version would change with every render and render again.
+    itself, and a version would change with every render and render again. Nor the
+    `spec.crossplane` Crossplane writes into the Fabric and each FabricInput, both XRs.
     """
-    spec = {key: value for key, value in (fabric.get("spec") or {}).items() if key != "crossplane"}
     config_maps = {name: dict(cm.get("data") or {}) for name, cm in read.config_maps.items()}
     for (cm, key), text in (pools or {}).items():
         config_maps.setdefault(cm, {})[key] = text
     whole = {
-        "spec": spec,
-        "inputs": {(doc.get("metadata") or {}).get("name"): doc.get("spec") for doc in read.inputs},
+        "spec": _own(fabric),
+        "inputs": {(doc.get("metadata") or {}).get("name"): _own(doc) for doc in read.inputs},
         "configMaps": config_maps,
         "vault": hashlib.sha256((read.vault_password or "").encode()).hexdigest(),
     }
     return "sha256:" + hashlib.sha256(json.dumps(whole, sort_keys=True).encode()).hexdigest()
+
+
+def _own(xr: dict) -> dict:
+    """An XR's spec without what Crossplane writes into it."""
+    return {key: value for key, value in (xr.get("spec") or {}).items() if key != "crossplane"}
 
 
 Renderer = Callable[[dict, Read], Render]

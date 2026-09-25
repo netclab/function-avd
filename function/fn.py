@@ -20,6 +20,10 @@ from .structs import Composed, numbers, unchanged
 class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
     def __init__(self) -> None:
         self.log = logging.get_logger()
+        # Each Fabric's last render, by what it read. Crossplane calls again within one
+        # reconcile when a required resource's metadata moved between its seed and its
+        # fetch, and the Fabric's status.rendered is written only after the last call.
+        self.renders: dict[tuple[str, str], tuple[str, fabric.Render]] = {}
 
     async def RunFunction(self, req: fnv1.RunFunctionRequest, _context) -> fnv1.RunFunctionResponse:
         rsp = response.to(req)
@@ -75,10 +79,16 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
             for key in wanted
         }
         meta = composite.get("metadata") or {}
+        key = (meta.get("namespace") or "", meta.get("name") or "")
 
         def render(fab: dict, read: fabric.Read) -> fabric.Render:
+            content = fabric.content_hash(fab, read)
+            last = self.renders.get(key)
+            if last is not None and last[0] == content:
+                return last[1]
             started = time.monotonic()
             rendered = fabric.render(fab, read)
+            self.renders[key] = (content, rendered)
             self.log.info(
                 "rendered",
                 namespace=meta.get("namespace"),

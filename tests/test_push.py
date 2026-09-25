@@ -171,6 +171,26 @@ def test_an_observe_or_another_revisions_push_says_nothing_of_the_error():
     assert push.error_from_observed(observed(REFUSED, pushed("0000000000000000")), HASH) is None
 
 
+# What provider-http reported in the lab, for an address nothing answered at.
+UNREACHABLE = (
+    'create failed: something went wrong: Post "https://172.16.1.101:443/command-api": '
+    "dial tcp 172.16.1.101:443: connect: connection timed out"
+)
+
+
+def synced(status: str, message: str = "") -> dict:
+    return {"status": {"conditions": [{"type": "Synced", "status": status, "message": message}]}}
+
+
+def test_a_failed_reconcile_is_the_providers_error():
+    assert push.provider_error(synced("False", UNREACHABLE)) == f"provider-http: {UNREACHABLE}"
+
+
+def test_a_synced_request_or_none_has_no_providers_error():
+    assert push.provider_error(synced("True")) is None
+    assert push.provider_error({}) is None
+
+
 def request(**given) -> dict:
     args = {
         "name": "single-dc-l3ls-dc1-spine1",

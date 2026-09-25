@@ -90,11 +90,14 @@ def compose(device: dict, observed: dict[str, dict]) -> Composed:
         if recorded:
             deployed = {"configHash": new_hash, "digest": recorded}
 
-        error = push.error_from_observed(observed_request, new_hash)
+        error = push.provider_error(observed_request)
         if error is None:
-            # No push of this revision has answered: an earlier error of the same
-            # revision still stands, one of another revision does not.
-            error = prev.get("error", "") if prev.get("configHash") == new_hash else ""
+            error = push.error_from_observed(observed_request, new_hash)
+        if error is None:
+            # No push of this revision has answered: an earlier eAPI error of the same
+            # revision still stands; one of another revision, or provider-http's, does not.
+            carried = prev.get("error", "") if prev.get("configHash") == new_hash else ""
+            error = "" if carried.startswith(push.PROVIDER_ERROR) else carried
         status["error"] = error
 
         secret = eapi["secretRef"]
