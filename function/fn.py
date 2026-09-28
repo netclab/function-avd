@@ -7,6 +7,7 @@ own module and see plain dicts; this module moves them in and out of the request
 from __future__ import annotations
 
 import asyncio
+import datetime
 import time
 
 from crossplane.function import logging, request, resource, response
@@ -15,6 +16,10 @@ from crossplane.function.proto.v1 import run_function_pb2_grpc as grpcv1
 
 from . import device, fabric
 from .structs import Composed, numbers, unchanged
+
+# While a composite's watch circuit is open, Crossplane drops the events of what it reads
+# and composes: a change reaches the composite only when the TTL requeues it.
+OPEN_CIRCUIT_TTL = datetime.timedelta(seconds=10)
 
 
 class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
@@ -26,8 +31,8 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
         self.renders: dict[tuple[str, str], tuple[str, fabric.Render]] = {}
 
     async def RunFunction(self, req: fnv1.RunFunctionRequest, _context) -> fnv1.RunFunctionResponse:
-        rsp = response.to(req)
         composite = numbers(resource.struct_to_dict(req.observed.composite.resource))
+        rsp = response.to(req, ttl=_ttl(composite))
         observed = {
             key: numbers(resource.struct_to_dict(res.resource))
             for key, res in req.observed.resources.items()
@@ -102,6 +107,14 @@ class FunctionRunner(grpcv1.FunctionRunnerServiceServicer):
         # A render is seconds of Ansible: off the event loop, so other calls are served.
         composed = await asyncio.to_thread(fabric.compose, composite, required, observed, render)
         _write(rsp, composed)
+
+
+def _ttl(composite: dict) -> datetime.timedelta:
+    conditions = (composite.get("status") or {}).get("conditions") or []
+    circuit_open = any(
+        c.get("type") == "Responsive" and c.get("status") == "False" for c in conditions
+    )
+    return OPEN_CIRCUIT_TTL if circuit_open else response.DEFAULT_TTL
 
 
 def _write(rsp: fnv1.RunFunctionResponse, composed: Composed, status: bool = True) -> None:

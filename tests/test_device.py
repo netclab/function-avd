@@ -6,10 +6,10 @@ import asyncio
 import json
 
 import pytest
-from crossplane.function import resource
+from crossplane.function import resource, response
 from crossplane.function.proto.v1 import run_function_pb2 as fnv1
 
-from function import device, push
+from function import device, fn, push
 from function.fn import FunctionRunner
 
 REPO = "examples/single-dc-l3ls"
@@ -262,6 +262,27 @@ def test_the_runner_renders_what_crossplane_passes(leaf):
     status = resource.struct_to_dict(rsp.desired.composite.resource)["status"]
     assert status["invalid"] == []
     assert not rsp.results
+
+
+def a_composite(responsive: str | None) -> dict:
+    """A FabricInput, which composes nothing, with its Responsive condition if given."""
+    obj = {"apiVersion": "avd.netclab.dev/v1alpha1", "kind": "FabricInput", "metadata": {}}
+    if responsive:
+        obj["status"] = {"conditions": [{"type": "Responsive", "status": responsive}]}
+    return obj
+
+
+def test_the_runner_asks_back_sooner_while_the_watch_circuit_is_open():
+    rsp = run(a_composite("False"))
+
+    assert rsp.meta.ttl.ToTimedelta() == fn.OPEN_CIRCUIT_TTL
+
+
+@pytest.mark.parametrize("responsive", ["True", None])
+def test_the_runner_keeps_the_default_ttl_otherwise(responsive):
+    rsp = run(a_composite(responsive))
+
+    assert rsp.meta.ttl.ToTimedelta() == response.DEFAULT_TTL
 
 
 def test_the_runner_refuses_a_kind_it_does_not_reconcile():
