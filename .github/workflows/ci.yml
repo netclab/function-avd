@@ -96,9 +96,8 @@ jobs:
 
       - name: Function package
         run: |
-          docker save function-avd-runtime -o runtime.tar
           crossplane xpkg build --package-root=package \
-            --embed-runtime-image-tarball=runtime.tar -o function-avd-${{ matrix.arch }}.xpkg
+            --embed-runtime-image=function-avd-runtime -o function-avd-${{ matrix.arch }}.xpkg
 
       - name: Configuration package
         if: matrix.arch == 'amd64'
