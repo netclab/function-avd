@@ -1,8 +1,12 @@
 """example/: the Function as it is installed, with its runtime config, before the
-Configuration that depends on it; and the provider config a Device's Request takes."""
+Configuration that depends on it; the provider config a Device's Request takes; and a
+fabric, as netadopt emits it for the lab."""
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -12,6 +16,17 @@ import yaml
 from function import push
 
 ROOT = Path(__file__).parent.parent
+FABRIC = ROOT / "example" / "single-dc-l3ls.yaml"
+
+# The repository the fabric is emitted from.
+REPO = ROOT / "avd" / "ansible_collections" / "arista" / "avd" / "examples" / "single-dc-l3ls"
+
+NETADOPT = Path(sys.executable).parent / "netadopt"
+CROSSPLANE_CLI = shutil.which("crossplane")
+# Crossplane itself, whose built-in schemas the validation reads.
+CROSSPLANE_VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["function-avd"][
+    "crossplane"
+]
 
 
 @pytest.fixture(scope="module")
@@ -53,3 +68,31 @@ def test_the_provider_config_is_the_default_a_request_takes():
 
     assert config["apiVersion"].split("/")[0] == push.REQUEST_API_VERSION.split("/")[0]
     assert (config["kind"], config["metadata"]["name"]) == ("ClusterProviderConfig", "default")
+
+
+@pytest.mark.skipif(not REPO.is_dir(), reason="no AVD checkout: run `git submodule update --init`")
+def test_the_fabric_is_what_netadopt_emits_for_the_lab(tmp_path):
+    # The lab's vars are the Fabric's extraVars, as `emit -e` carried them; what
+    # `netadopt avd lab` writes is netadopt's to test.
+    fabric = next(doc for doc in yaml.safe_load_all(FABRIC.read_text()) if doc["kind"] == "Fabric")
+    lab_vars = tmp_path / "lab-vars.yml"
+    lab_vars.write_text(yaml.safe_dump(fabric["spec"]["extraVars"], sort_keys=False))
+    emit = [NETADOPT, "avd", "emit", REPO, "--playbook", "build.yml", "-e", f"@{lab_vars}"]
+
+    done = subprocess.run(emit, capture_output=True, text=True, check=True)
+
+    assert done.stdout == FABRIC.read_text()
+
+
+@pytest.mark.skipif(CROSSPLANE_CLI is None, reason="needs the crossplane CLI")
+def test_the_fabric_validates_against_the_xrds():
+    xrds = ",".join(str(xrd) for xrd in sorted((ROOT / "apis").glob("*/xrd.yaml")))
+    command = [CROSSPLANE_CLI, "resource", "validate", xrds, str(FABRIC)]
+    command += [
+        f"--crossplane-image=xpkg.crossplane.io/crossplane/crossplane:{CROSSPLANE_VERSION}",
+        "--error-on-missing-schemas",
+    ]
+
+    done = subprocess.run(command, capture_output=True, text=True, check=False)
+
+    assert done.returncode == 0, done.stdout + done.stderr
