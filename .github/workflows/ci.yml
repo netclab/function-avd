@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 env:
-  XP_VERSION: v2.5.0
+  XP_VERSION: v2.5.0  # the crossplane CLI
 
 jobs:
   test:
