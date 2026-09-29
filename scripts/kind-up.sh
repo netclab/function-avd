@@ -52,7 +52,7 @@ MULTUS=${MULTUS:-v4.3.0}
 # RESTCONF, which this lab does not use. Staying current is cheaper than
 # discovering the gap the day something does.
 # renovate: datasource=helm depName=netclab registryUrl=https://netclab.github.io/netclab-chart
-NETCLAB_CHART=${NETCLAB_CHART:-0.5.11}
+NETCLAB_CHART=${NETCLAB_CHART:-0.6.0}
 # v1.0.14 is a floor too: the config push composes a *namespaced* Request
 # (http.m.crossplane.io), which older provider-http releases do not serve.
 # renovate: datasource=docker depName=xpkg.upbound.io/crossplane-contrib/provider-http
