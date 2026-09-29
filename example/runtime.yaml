@@ -18,11 +18,13 @@ spec:
                 cpu: "4"
                 memory: 1Gi
 ---
-apiVersion: pkg.crossplane.io/v1
-kind: Function
+apiVersion: pkg.crossplane.io/v1beta1
+kind: ImageConfig
 metadata:
-  name: netclab-function-avd
+  name: function-avd
 spec:
-  package: xpkg.upbound.io/netclab/function-avd:v0.2.0
-  runtimeConfigRef:
-    name: function-avd
+  matchImages:
+  - prefix: xpkg.upbound.io/netclab/function-avd
+  runtime:
+    configRef:
+      name: function-avd

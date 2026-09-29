@@ -1,5 +1,5 @@
-"""example/: the Function as it is installed, with its runtime config, before the
-Configuration that depends on it; the provider config a Device's Request takes; and a
+"""example/: the runtime config function-avd is installed with, applied before the
+Configuration that installs it; the provider config a Device's Request takes; and a
 fabric, as netadopt emits it for the lab."""
 
 from __future__ import annotations
@@ -31,34 +31,41 @@ CROSSPLANE_VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"
 
 @pytest.fixture(scope="module")
 def by_kind() -> dict[str, dict]:
-    docs = yaml.safe_load_all((ROOT / "example" / "functions.yaml").read_text())
+    docs = yaml.safe_load_all((ROOT / "example" / "runtime.yaml").read_text())
     return {doc["kind"]: doc for doc in docs}
 
 
-def test_the_function_is_the_version_released(by_kind):
+@pytest.fixture(scope="module")
+def dependency() -> dict:
+    meta = yaml.safe_load((ROOT / "apis" / "crossplane.yaml").read_text())
+    return next(dep for dep in meta["spec"]["dependsOn"] if dep["kind"] == "Function")
+
+
+def test_the_configuration_depends_on_the_function_of_its_own_version(dependency):
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
 
-    assert by_kind["Function"]["spec"]["package"].endswith(f":v{version}")
+    assert dependency["version"] == f"v{version}"
 
 
-def test_the_function_is_the_name_the_compositions_call(by_kind):
+def test_the_compositions_call_the_function_by_the_name_crossplane_installs_it_under(dependency):
+    # Crossplane names a dependency after its repository, the registry left out:
+    # xpkg.ToDNSLabel, which turns each "/" into "-".
+    name = dependency["package"].split("/", 1)[1].replace("/", "-")
+
     for composition in sorted((ROOT / "apis").glob("*/composition.yaml")):
         steps = yaml.safe_load(composition.read_text())["spec"]["pipeline"]
 
-        assert {step["functionRef"]["name"] for step in steps} == {
-            by_kind["Function"]["metadata"]["name"]
-        }
+        assert {step["functionRef"]["name"] for step in steps} == {name}
 
 
-def test_the_configuration_depends_on_the_function_installed(by_kind):
-    meta = yaml.safe_load((ROOT / "apis" / "crossplane.yaml").read_text())
-    function = next(dep for dep in meta["spec"]["dependsOn"] if dep["kind"] == "Function")
+def test_the_image_config_matches_the_function_the_configuration_depends_on(by_kind, dependency):
+    matches = by_kind["ImageConfig"]["spec"]["matchImages"]
 
-    assert f"{function['package']}:{function['version']}" == by_kind["Function"]["spec"]["package"]
+    assert [match["prefix"] for match in matches] == [dependency["package"]]
 
 
 def test_the_function_runs_with_the_runtime_config_beside_it(by_kind):
-    ref = by_kind["Function"]["spec"]["runtimeConfigRef"]
+    ref = by_kind["ImageConfig"]["spec"]["runtime"]["configRef"]
 
     assert ref["name"] == by_kind["DeploymentRuntimeConfig"]["metadata"]["name"]
 

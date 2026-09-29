@@ -19,8 +19,8 @@ metadata:
 
       [netadopt](https://github.com/netclab/netadopt) writes them from an existing AVD
       repository. Installing this installs function-avd and provider-http. From the
-      examples, create the Function in `functions.yaml` first: it runs with the requests
-      and limits a fabric's render needs. Then `providerconfig.yaml`: a Device's `Request`
+      examples, apply `runtime.yaml` first: function-avd then runs with the requests and
+      limits a fabric's render needs. Then `providerconfig.yaml`: a Device's `Request`
       names no provider config, and takes provider-http's `default`.
 spec:
   crossplane:
@@ -32,5 +32,5 @@ spec:
     version: v0.2.0
   - apiVersion: pkg.crossplane.io/v1
     kind: Provider
-    package: xpkg.upbound.io/crossplane-contrib/provider-http
+    package: xpkg.crossplane.io/crossplane-contrib/provider-http
     version: ">=v1.0.14"
