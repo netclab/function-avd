@@ -1,9 +1,10 @@
 """example/: the runtime config function-avd is installed with, applied before the
-Configuration that installs it; the provider config a Device's Request takes; and a
-fabric, as netadopt emits it for the lab."""
+Configuration that installs it; the provider config a Device's Request takes, both shown
+in the package's readme; and a fabric, as netadopt emits it for the lab."""
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,9 @@ FABRIC = ROOT / "example" / "single-dc-l3ls.yaml"
 
 # The repository the fabric is emitted from.
 REPO = ROOT / "avd" / "ansible_collections" / "arista" / "avd" / "examples" / "single-dc-l3ls"
+
+# A fenced YAML block in Markdown, its body up to the closing fence.
+YAML_BLOCK = re.compile(r"^```yaml\n(.*?)^```$", re.MULTILINE | re.DOTALL)
 
 NETADOPT = Path(sys.executable).parent / "netadopt"
 CROSSPLANE_CLI = shutil.which("crossplane")
@@ -75,6 +79,17 @@ def test_the_provider_config_is_the_default_a_request_takes():
 
     assert config["apiVersion"].split("/")[0] == push.REQUEST_API_VERSION.split("/")[0]
     assert (config["kind"], config["metadata"]["name"]) == ("ClusterProviderConfig", "default")
+
+
+def test_the_package_readme_shows_the_files_applied_around_it_as_they_are():
+    # The Marketplace shows only the examples of the package's own XRDs, so the two files
+    # applied before and after the Configuration are shown in its readme instead.
+    meta = yaml.safe_load((ROOT / "apis" / "crossplane.yaml").read_text())
+    readme = meta["metadata"]["annotations"]["meta.crossplane.io/readme"]
+
+    assert YAML_BLOCK.findall(readme) == [
+        (ROOT / "example" / name).read_text() for name in ("runtime.yaml", "providerconfig.yaml")
+    ]
 
 
 @pytest.mark.skipif(not REPO.is_dir(), reason="no AVD checkout: run `git submodule update --init`")

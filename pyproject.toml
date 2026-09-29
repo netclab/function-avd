@@ -1,6 +1,6 @@
 [project]
 name = "function-avd"
-version = "0.2.0"
+version = "0.2.1"
 description = "A Crossplane composition function that renders a fabric with Arista AVD and pushes each device's config"
 authors = [
     { name = "mbakalarski", email = "64490638+mbakalarski@users.noreply.github.com" }

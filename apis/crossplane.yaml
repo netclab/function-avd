@@ -18,10 +18,56 @@ metadata:
       * `Device` -- one host's structured config, and where its eAPI is.
 
       [netadopt](https://github.com/netclab/netadopt) writes them from an existing AVD
-      repository. Installing this installs function-avd and provider-http. From the
-      examples, apply `runtime.yaml` first: function-avd then runs with the requests and
-      limits a fabric's render needs. Then `providerconfig.yaml`: a Device's `Request`
-      names no provider config, and takes provider-http's `default`.
+      repository. Installing this also installs function-avd and provider-http.
+
+      First, before installing this Configuration, apply the CPU and memory function-avd
+      runs with:
+
+      ```yaml
+      apiVersion: pkg.crossplane.io/v1beta1
+      kind: DeploymentRuntimeConfig
+      metadata:
+        name: function-avd
+      spec:
+        deploymentTemplate:
+          spec:
+            selector: {}
+            template:
+              spec:
+                containers:
+                - name: package-runtime
+                  resources:
+                    requests:
+                      cpu: "1"
+                      memory: 1Gi
+                    limits:
+                      cpu: "4"
+                      memory: 1Gi
+      ---
+      apiVersion: pkg.crossplane.io/v1beta1
+      kind: ImageConfig
+      metadata:
+        name: function-avd
+      spec:
+        matchImages:
+        - prefix: xpkg.upbound.io/netclab/function-avd
+        runtime:
+          configRef:
+            name: function-avd
+      ```
+
+      Last, after this Configuration is healthy, apply the provider config that every
+      Device's push uses:
+
+      ```yaml
+      apiVersion: http.m.crossplane.io/v1alpha2
+      kind: ClusterProviderConfig
+      metadata:
+        name: default
+      spec:
+        credentials:
+          source: None
+      ```
 spec:
   crossplane:
     version: ">=v2.4.0"
@@ -29,7 +75,7 @@ spec:
   - apiVersion: pkg.crossplane.io/v1
     kind: Function
     package: xpkg.upbound.io/netclab/function-avd
-    version: v0.2.0
+    version: v0.2.1
   - apiVersion: pkg.crossplane.io/v1
     kind: Provider
     package: xpkg.crossplane.io/crossplane-contrib/provider-http
