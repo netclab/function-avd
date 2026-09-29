@@ -1,24 +1,20 @@
-"""Build the eAPI config-push managed resource for a Device.
+"""The provider-http Request that keeps a device's running config on its eos.cfg.
 
-The push is a provider-http ``Request`` (namespaced, ``http.m.crossplane.io``)
-composed by the Device function. Crossplane's own reconcile loop is the watch:
-OBSERVE asks the device for its config digest, ``expectedResponseCheck``
-compares it, and a mismatch makes the provider re-run the UPDATE mapping --
-a full ``configure session`` + ``rollback clean-config`` replace over eAPI.
+OBSERVE asks the device for two things, `expectedResponseCheck` compares them, and a
+mismatch makes provider-http run the UPDATE mapping: one `configure session` that
+replaces the whole configuration.
 
-Two identities cooperate, because neither alone is enough:
+Two identities, because neither alone is enough:
 
-* the **marker** -- ``alias avd_cfg_<hash>`` pushed with the config -- names the
-  model revision (``configHash``) the device is running. It is how a model
-  change forces a push, and how the function knows an observed digest belongs
-  to the *current* revision and not to the one a lagging status still shows.
-* the **digest** -- ``show running-config digest`` -- is EOS's own hash of the
-  canonicalized running config. It cannot be predicted from ``eos.cfg`` (EOS
-  reformats), so it is *recorded* from the device right after a push, then
-  compared on every OBSERVE: any manual change on the box flips it.
+* the **marker** -- `alias avd_cfg_<revision>`, pushed with the config -- names the
+  eos.cfg the device runs. A new eos.cfg is a new revision, which is what makes a push.
+* the **digest** -- `show running-config digest` -- is EOS's own hash of the running
+  config. EOS reformats what it is given, so the digest cannot be computed from eos.cfg:
+  it is read from the device right after a push, and every OBSERVE compares it. An edit
+  made on the device changes it, and the next UPDATE takes the edit back.
 
-Everything here is pure and offline-testable; the live wiring lives in
-``fn.py``.
+Measured on cEOS for single-line commands. The multi-line form, `{"cmd", "input"}`, is
+eAPI's own and has not been pushed to a device yet.
 """
 
 from __future__ import annotations
@@ -27,48 +23,59 @@ import json
 
 REQUEST_API_VERSION = "http.m.crossplane.io/v1alpha2"
 
-# Multi-line EOS commands need eAPI's {"cmd":..., "input":...} form; nothing in
-# the lab fabrics renders one. Fail loudly rather than push a broken session.
-MULTILINE_PREFIXES = ("banner ",)
+# A command whose body follows on its own lines, up to a line reading EOF.
+BLOCK_END = "EOF"
 
 
 def revision(config_hash: str) -> str:
-    """The bare hex of a ``sha256:<hex>`` configHash: session + marker identity."""
+    """The hex of a `sha256:<hex>` configHash: the marker's and the push's identity."""
     return config_hash.split(":", 1)[-1]
 
 
 def marker_line(config_hash: str) -> str:
-    """The config line naming the model revision the device runs.
+    """The config line naming the revision the device runs.
 
-    ``show clock`` is arbitrary -- the alias exists to be found by
-    ``show running-config | include``, not to be executed.
+    `show clock` is arbitrary: the alias exists to be found, never to be run.
     """
     return f"alias avd_cfg_{revision(config_hash)} show clock"
 
 
-def config_commands(eos_cli: str) -> list[str]:
-    """Rendered ``eos.cfg`` -> the command list for a config session.
+def _opens_block(stripped: str) -> bool:
+    return stripped == "comment" or stripped.startswith("banner ")
 
-    Comment/separator lines (``!``) and blanks are CLI no-ops, dropped for
-    payload size; the trailing ``end`` would leave config mode before the
-    session commits, so it is dropped too.
+
+def config_commands(eos_cli: str) -> list[str | dict]:
+    """eos.cfg as the commands of one config session.
+
+    Comment lines (`!`) and blank lines are dropped, and so is the closing `end`, which
+    would leave config mode before the session commits. A `banner` or `comment` becomes
+    one command with its lines as `input`, `!` lines included: inside the block they are
+    text, not comments.
     """
-    cmds = []
-    for line in eos_cli.splitlines():
+    cmds: list[str | dict] = []
+    lines = iter(eos_cli.splitlines())
+    for line in lines:
         stripped = line.strip()
-        if not stripped or stripped.startswith("!"):
+        if not stripped or stripped.startswith("!") or stripped == "end":
             continue
-        if stripped.startswith(MULTILINE_PREFIXES):
-            raise ValueError(f"multi-line command not supported over runCmds: {stripped!r}")
-        if stripped == "end":
+        if _opens_block(stripped):
+            indent = len(line) - len(line.lstrip())
+            body = []
+            for inner in lines:
+                if inner.strip() == BLOCK_END:
+                    break
+                body.append(inner[indent:] if inner[:indent].isspace() else inner.lstrip())
+            else:
+                raise ValueError(f"{stripped!r} has no {BLOCK_END} line")
+            cmds.append({"cmd": line.rstrip(), "input": "\n".join(body)})
             continue
         cmds.append(line.rstrip())
     return cmds
 
 
-def _eapi_body(cmds: list[str], req_id: str, fmt: str = "json") -> str:
-    """A JSON-RPC runCmds body. Literal JSON is also a valid jq program, which
-    is what a Request mapping body is evaluated as."""
+def _eapi_body(cmds: list[str | dict], req_id: str, fmt: str = "json") -> str:
+    """A JSON-RPC runCmds body. Literal JSON is a jq program too, which is what a
+    mapping body is evaluated as."""
     return json.dumps(
         {
             "jsonrpc": "2.0",
@@ -79,23 +86,21 @@ def _eapi_body(cmds: list[str], req_id: str, fmt: str = "json") -> str:
     )
 
 
-def push_body(eos_cli: str, config_hash: str) -> str:
-    """The CREATE/UPDATE mapping body: one atomic full-replace session.
+def push_body(commands: list[str | dict], config_hash: str) -> str:
+    """The CREATE and UPDATE body: one session replacing the whole configuration.
 
-    The session is deliberately *unnamed*: EOS keeps exactly one completed
-    session in history, so a fixed name works once and then every retry -- in
-    particular the drift-reclaim re-push of the same revision -- fails with
-    "already completed". The device picks a fresh name each attempt; the
-    request is tied to its revision by the JSON-RPC ``id`` instead, which is
-    how ``deployed_digest_from_observed`` recognizes a push response. The
-    final ``show running-config digest`` makes that response carry the digest
-    of the exact config just committed.
+    The session has no name: EOS keeps one completed session in its history, so a fixed
+    name works once, and every later push of the same revision -- the one taking an
+    edit back -- fails as "already completed". The JSON-RPC id carries the revision
+    instead, and `digest_from_observed` recognizes a push response by it. The closing
+    `show running-config digest` makes the response carry the digest of the
+    configuration just committed.
     """
     cmds = [
         "enable",
         "configure session",
         "rollback clean-config",
-        *config_commands(eos_cli),
+        *commands,
         marker_line(config_hash),
         "commit",
         "show running-config digest",
@@ -104,9 +109,9 @@ def push_body(eos_cli: str, config_hash: str) -> str:
 
 
 def observe_body(config_hash: str) -> str:
-    """The OBSERVE mapping body: marker + digest, two cheap read commands.
+    """The OBSERVE body: the marker and the digest, two reads.
 
-    ``format: text`` because ``| include`` pipes have no JSON rendering.
+    As text, because `| include` has no JSON form.
     """
     cmds = [
         "enable",
@@ -119,14 +124,13 @@ def observe_body(config_hash: str) -> str:
 def expected_check_logic(config_hash: str, deployed_digest: str | None) -> str:
     """The jq deciding, from an OBSERVE response, whether the device is in sync.
 
-    Marker mismatch (or eAPI error) -> the device runs another model revision ->
-    push. With a recorded digest the running config must also hash to exactly
-    what the last push left behind, so any manual edit on the box re-pushes.
-    Before the first digest is recorded, the marker alone counts as in-sync:
-    the push already happened, the function just hasn't read its result yet --
-    re-pushing in that window would only churn.
+    Another marker, or an eAPI error, means another revision runs: push. With a digest
+    recorded, the running config must also hash to what the last push left, so an edit
+    on the device is pushed over. Before a digest is recorded the marker alone counts:
+    the push has happened and its response is not read yet, and pushing again in that
+    window only repeats it.
     """
-    marker = f"if (.response.body.result[1].output | contains(\"avd_cfg_{revision(config_hash)} \"))"
+    marker = f'if (.response.body.result[1].output | contains("avd_cfg_{revision(config_hash)} "))'
     if deployed_digest is None:
         return f"{marker} then true else false end"
     return (
@@ -136,40 +140,38 @@ def expected_check_logic(config_hash: str, deployed_digest: str | None) -> str:
     )
 
 
-def deployed_digest_from_observed(
-    observed_request: dict, config_hash: str
-) -> tuple[str, str] | None:
-    """Extract ``(digest, source)`` for *this* model revision, if present.
-
-    Trust ``status.response`` only when it provably belongs to the current
-    ``configHash`` -- a lagging status otherwise records a stale digest as
-    golden and the model change would never land:
-
-    * source ``"push"`` -- the response to our replace session, recognized by
-      the revision-scoped JSON-RPC id in ``status.requestDetails.body``: the
-      digest of the exact config just committed. Always authoritative.
-    * source ``"observe"`` -- vouched for only by the marker line, which
-      survives manual edits on the box. The caller must accept it solely when
-      no digest is recorded yet for this revision (the bootstrap window),
-      otherwise a drifted running config would be re-recorded as golden.
-    """
+def _response(observed_request: dict) -> tuple[dict, str]:
+    """The Request's last response body, and the body that was sent for it."""
     status = observed_request.get("status") or {}
-    body = status.get("response", {}).get("body")
-    if not body:
-        return None
     try:
-        result = json.loads(body).get("result") or []
+        body = json.loads((status.get("response") or {}).get("body") or "")
     except (TypeError, ValueError):
-        return None
-    if not result:
-        return None
+        return {}, ""
+    sent = (status.get("requestDetails") or {}).get("body") or ""
+    return (body if isinstance(body, dict) else {}), sent
 
+
+def digest_from_observed(observed_request: dict, config_hash: str) -> tuple[str, str] | None:
+    """`(digest, source)` for this revision, when the Request's last response holds one.
+
+    A response is trusted only when it belongs to this configHash -- a status that lags
+    would otherwise record another revision's digest, and the new eos.cfg would never
+    be pushed:
+
+    * `push` -- the response to this revision's session, recognized by the JSON-RPC id
+      in `status.requestDetails.body`: the digest of the configuration just committed.
+    * `observe` -- vouched for by the marker alone, which an edit on the device keeps.
+      The caller takes it only while no digest is recorded for this revision, or an
+      edited running config would be recorded as the one to keep.
+    """
+    body, sent = _response(observed_request)
+    result = body.get("result") or []
+    if not result or not isinstance(result[-1], dict):
+        return None
     rev = revision(config_hash)
     last = result[-1]
-    if not isinstance(last, dict):
-        return None
 
-    if f'"push-{rev}"' in (status.get("requestDetails", {}).get("body") or ""):
+    if f'"push-{rev}"' in sent:
         digest = last.get("digest")
         return (digest, "push") if digest else None
 
@@ -180,40 +182,77 @@ def deployed_digest_from_observed(
     return None
 
 
+def error_from_observed(observed_request: dict, config_hash: str) -> str | None:
+    """eAPI's error for this revision's push, "" when it succeeded, None when unknown.
+
+    provider-http reports a push that eAPI refuses as a success -- the error is only in
+    the response body. Only a push response of this revision says anything: an OBSERVE
+    between two pushes answers without an error while the push keeps failing.
+    """
+    body, sent = _response(observed_request)
+    if f'"push-{revision(config_hash)}"' not in sent or not body:
+        return None
+    error = body.get("error")
+    if not error:
+        return ""
+    said = [error.get("message") or f"eAPI error {error.get('code')}"]
+    for item in error.get("data") or []:
+        if isinstance(item, dict):
+            said += [str(e) for e in item.get("errors") or []]
+    return ": ".join(said)
+
+
+# Begins the error of a Request provider-http could not reconcile, eAPI's never: an
+# error so marked is current only, and a Device never carries it over.
+PROVIDER_ERROR = "provider-http: "
+
+
+def provider_error(observed_request: dict) -> str | None:
+    """provider-http's message while its last reconcile of the Request failed.
+
+    The address unreachable, the credentials missing: no response of any revision says
+    so, only the Request's Synced condition.
+    """
+    for condition in (observed_request.get("status") or {}).get("conditions") or []:
+        if condition.get("type") == "Synced" and condition.get("status") == "False":
+            said = condition.get("message") or condition.get("reason") or "not synced"
+            return PROVIDER_ERROR + said
+    return None
+
+
 def request_object(
     *,
     name: str,
     namespace: str,
-    labels: dict[str, str],
     url: str,
-    credentials_secret: str,
-    provider_config: str,
+    secret_name: str,
+    secret_key: str,
     insecure_skip_tls_verify: bool,
-    eos_cli: str,
+    commands: list[str | dict],
     config_hash: str,
     deployed_digest: str | None,
 ) -> dict:
-    """The composed namespaced ``Request`` pushing this Device's config.
+    """The Request pushing a Device's eos.cfg, as `config_commands` splits it.
 
-    CREATE and UPDATE are the same full replace -- a device is never half-made.
-    No REMOVE mapping, and ``managementPolicies`` without ``Delete`` (the
-    namespaced-MR spelling of orphaning): deleting a Device stops managing the
-    box, it does not wipe it (an empty box is not a desired state).
+    CREATE and UPDATE are the same replace, so a device is never half-configured. No
+    REMOVE mapping, and no `Delete` in managementPolicies: deleting a Device stops
+    managing the device and leaves its configuration where it is. No providerConfigRef:
+    the default ClusterProviderConfig serves every namespace, and the credentials come
+    with each Request.
     """
-    body = push_body(eos_cli, config_hash)
+    body = push_body(commands, config_hash)
     headers = {
         "Content-Type": ["application/json"],
-        # provider-http resolves {{ name:namespace:key }} from the Secret; the
-        # key holds the ready-made base64 basic-auth token.
-        "Authorization": [f"Basic {{{{ {credentials_secret}:{namespace}:basic }}}}"],
+        # provider-http replaces {{ name:namespace:key }} with that Secret's key, which
+        # holds base64 of user:password.
+        "Authorization": [f"Basic {{{{ {secret_name}:{namespace}:{secret_key} }}}}"],
     }
     return {
         "apiVersion": REQUEST_API_VERSION,
         "kind": "Request",
-        "metadata": {"name": name, "namespace": namespace, "labels": labels},
+        "metadata": {"name": name, "namespace": namespace},
         "spec": {
             "managementPolicies": ["Observe", "Create", "Update"],
-            "providerConfigRef": {"name": provider_config, "kind": "ProviderConfig"},
             "forProvider": {
                 "insecureSkipTLSVerify": insecure_skip_tls_verify,
                 "headers": headers,

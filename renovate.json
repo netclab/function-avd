@@ -1,28 +1,62 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-  "packageRules": [
-    {
-      "description": "pyavd is pinned to the version of the avd submodule (v6.3.0): the golden structured configs the tests diff against come from that submodule, so bumping either one alone turns the suite red. Upgrading AVD means moving both together and reviewing the golden diff by hand.",
-      "matchPackageNames": ["pyavd"],
-      "enabled": false
-    }
+  "extends": [
+    "config:recommended"
   ],
-  "git-submodules": {
-    "description": "Same coupling as pyavd, from the other side: the avd submodule carries the golden configs. Kept off explicitly rather than by default, so enabling it stays a deliberate act.",
+  "pyenv": {
     "enabled": false
   },
+  "git-submodules": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "matchManagers": [
+        "git-submodules"
+      ],
+      "groupName": "avd"
+    },
+    {
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchPackageNames": [
+        "netadopt",
+        "pyavd"
+      ],
+      "groupName": "avd"
+    },
+    {
+      "matchPackageNames": [
+        "astral-sh/uv",
+        "ghcr.io/astral-sh/uv",
+        "uv-build"
+      ],
+      "groupName": "uv"
+    }
+  ],
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Version pins that live inside shell -- `run:` bodies in the workflows and the variables at the top of kind-up.sh. No built-in manager reads either (github-actions only sees `uses:`/`container:`/`services:`), so each pin carries a `# renovate:` comment naming its datasource and this one manager reads them all. Keep the comment directly above the line holding the version.",
       "managerFilePatterns": [
-        "/^\\.github/workflows/.+\\.ya?ml$/",
-        "/^scripts/.+\\.sh$/"
+        "/^\\.github/workflows/.+\\.ya?ml$/"
       ],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(?:\\s+registryUrl=(?<registryUrl>\\S+))?(?:\\s+versioning=(?<versioning>\\S+))?[^\\n]*\\n[^\\n]*?(?<currentValue>v?\\d+\\.\\d+\\.\\d+)"
-      ]
+        "XP_VERSION: (?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "crossplane/cli"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^pyproject\\.toml$/"
+      ],
+      "matchStrings": [
+        "crossplane = \"(?<currentValue>v\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "crossplane/crossplane"
     }
   ]
 }

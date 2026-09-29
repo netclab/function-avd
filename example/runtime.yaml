@@ -1,0 +1,30 @@
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: function-avd
+spec:
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          containers:
+          - name: package-runtime
+            resources:
+              requests:
+                cpu: "1"
+                memory: 1Gi
+              limits:
+                cpu: "4"
+                memory: 1Gi
+---
+apiVersion: pkg.crossplane.io/v1beta1
+kind: ImageConfig
+metadata:
+  name: function-avd
+spec:
+  matchImages:
+  - prefix: xpkg.upbound.io/netclab/function-avd
+  runtime:
+    configRef:
+      name: function-avd

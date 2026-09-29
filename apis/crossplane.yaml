@@ -1,17 +1,3 @@
-# Configuration package metadata. `apis/` is this package's root, so everything
-# beside this file -- the Fabric and Device XRDs and their Compositions -- is
-# what ships.
-#
-# Why a second package at all: a Function package cannot carry XRDs or
-# Compositions. `crossplane xpkg build` rejects both with "object is not a CRD";
-# a Function package takes only the CRDs describing its input, and this function
-# has none. So the API this function serves has to be published as a
-# Configuration, and this is the closest place to where it is developed and
-# proven against real devices.
-#
-# The dev-only `Function` manifests live in `dev/`, outside this root, so the
-# build needs no `--ignore` exclusions and adding a directory under `apis/`
-# cannot silently fall out of the package.
 apiVersion: meta.pkg.crossplane.io/v1
 kind: Configuration
 metadata:
@@ -21,34 +7,30 @@ metadata:
     meta.crossplane.io/source: github.com/netclab/function-avd
     meta.crossplane.io/license: Apache-2.0
     meta.crossplane.io/description: >-
-      The avd.netclab.dev API: Fabric and Device XRDs and their Compositions,
-      served by function-avd.
+      The avd.netclab.dev API -- Fabric, FabricInput and Device -- served by function-avd.
     meta.crossplane.io/readme: |
-      The API served by
+      The `avd.netclab.dev` API and its Compositions, served by
       [function-avd](https://marketplace.upbound.io/functions/netclab/function-avd):
-      two composite kinds in the `avd.netclab.dev` group.
 
-      * **`Fabric`** — one AVD fabric. `spec.design` carries a fabric-wide
-        `eos_designs` document; the function runs the fabric-wide pyavd pipeline
-        and composes one `Device` per host.
-      * **`Device`** — validates and renders its own structured config and EOS
-        CLI, publishes them as a ConfigMap, and with `spec.push` set also
-        composes a provider-http `Request` that holds the box's running config
-        in sync over eAPI.
+      * `Fabric` -- one AVD fabric: the play, the inventory groups and `ansible.cfg`,
+        and the ConfigMaps and `FabricInput`s it lists;
+      * `FabricInput` -- the variables for one group, or for hosts;
+      * `Device` -- one host's structured config, and where its eAPI is.
 
-      Installing this pulls the function in as a dependency. See the
-      [repository](https://github.com/netclab/function-avd) for the XRD schemas,
-      a runnable kind lab, and the design notes.
+      [netadopt](https://github.com/netclab/netadopt) writes them from an existing AVD
+      repository. Installing this installs function-avd and provider-http. From the
+      examples, apply `runtime.yaml` first: function-avd then runs with the requests and
+      limits a fabric's render needs. Then `providerconfig.yaml`: a Device's `Request`
+      names no provider config, and takes provider-http's `default`.
 spec:
-  dependsOn:
-    # Installed by Crossplane as the Function object `netclab-function-avd` --
-    # `<org>-<name>` from the package path -- which is the name both
-    # Compositions here reference, and the name `scripts/kind-up.sh` uses so the
-    # dev cluster matches a real install.
-    - apiVersion: pkg.crossplane.io/v1
-      kind: Function
-      package: xpkg.upbound.io/netclab/function-avd
-      version: ">=v0.1.2"
-
   crossplane:
-    version: ">=v2.1.1"
+    version: ">=v2.4.0"
+  dependsOn:
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Function
+    package: xpkg.upbound.io/netclab/function-avd
+    version: v0.2.0
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Provider
+    package: xpkg.crossplane.io/crossplane-contrib/provider-http
+    version: ">=v1.0.14"
