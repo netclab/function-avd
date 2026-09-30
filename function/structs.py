@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 _KEPT_METADATA = ("name", "namespace", "labels", "annotations")
 _KEPT = ("apiVersion", "kind", "spec", "data")
 
+# The composed kinds that carry no conditions.
+_UNCONDITIONED = ("ConfigMap", "Secret")
+
 
 @dataclass(frozen=True)
 class Desired:
@@ -45,16 +48,17 @@ def numbers(obj: object) -> object:
 
 
 def ready(observed: dict | None) -> bool:
-    """An observed composed resource's Ready condition, or True when it has none.
+    """An observed composed resource's Ready condition; a ConfigMap or a Secret is ready.
 
-    A ConfigMap or a Secret has no condition to wait for; a resource not observed yet is
-    not ready.
+    A ConfigMap or a Secret has no condition to wait for. Anything else is ready only once
+    its Ready condition says so: a Device or a Request just created has no condition yet,
+    and a resource not observed yet is not ready.
     """
     if observed is None:
         return False
-    conditions = (observed.get("status") or {}).get("conditions")
-    if conditions is None:
+    if observed.get("apiVersion") == "v1" and observed.get("kind") in _UNCONDITIONED:
         return True
+    conditions = (observed.get("status") or {}).get("conditions") or []
     return any(c.get("type") == "Ready" and c.get("status") == "True" for c in conditions)
 
 
