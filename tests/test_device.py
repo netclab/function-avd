@@ -233,6 +233,8 @@ def test_an_eos_cfg_that_cannot_be_pushed_keeps_what_was_composed(leaf):
 
     assert composed.status["invalid"] == ["eos.cfg: 'comment' has no EOF line"]
     assert composed.resources[device.REQUEST].resource == good.resources[device.REQUEST].resource
+    # Kept before it has any condition: a Request just created is not ready yet.
+    assert not composed.resources[device.REQUEST].ready
 
 
 def run(composite: dict, observed: dict | None = None) -> fnv1.RunFunctionResponse:

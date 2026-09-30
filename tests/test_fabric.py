@@ -260,18 +260,39 @@ def test_two_hosts_that_spell_one_device_is_the_error():
     assert "would both be Device single-dc-l3ls-dc1-leaf1" in composed.status["error"]
 
 
+DEVICE = {
+    "apiVersion": "avd.netclab.dev/v1alpha1",
+    "kind": "Device",
+    "metadata": {"name": "d"},
+    "spec": {"x": 1},
+}
+
+
+@pytest.mark.parametrize(
+    ("status", "is_ready"),
+    [
+        (None, False),
+        ({"conditions": [{"type": "Synced", "status": "True"}]}, False),
+        ({"conditions": [{"type": "Ready", "status": "True"}]}, True),
+    ],
+)
+def test_a_device_is_ready_only_by_its_ready_condition(status, is_ready):
+    # A Device just created has no condition yet; counted ready, it made the Fabric
+    # Ready before any device ran its configuration.
+    fab = a_fabric()
+    observed = {f"{NAME}-dc1-leaf1a": DEVICE | ({"status": status} if status else {})}
+
+    composed = fabric.compose(fab, found(fab), observed, Renderer(rendered()))
+
+    assert composed.resources[f"{NAME}-dc1-leaf1a"].ready is is_ready
+
+
 def test_a_failed_render_keeps_the_devices_and_is_not_repeated():
     fab = a_fabric()
-    device = {
-        "apiVersion": "avd.netclab.dev/v1alpha1",
-        "kind": "Device",
-        "metadata": {"name": "d"},
-        "spec": {"x": 1},
-    }
     renderer = Renderer(fabric.Render(problem="fatal: [dc1-leaf1a]: FAILED!"))
 
-    first = fabric.compose(fab, found(fab), {"d": device}, renderer)
-    again = fabric.compose(a_fabric(status=first.status), found(fab), {"d": device}, renderer)
+    first = fabric.compose(fab, found(fab), {"d": DEVICE}, renderer)
+    again = fabric.compose(a_fabric(status=first.status), found(fab), {"d": DEVICE}, renderer)
 
     assert first.status["error"] == "fatal: [dc1-leaf1a]: FAILED!"
     assert first.resources["d"].resource["spec"] == {"x": 1}
