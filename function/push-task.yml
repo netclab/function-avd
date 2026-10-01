@@ -1,0 +1,11 @@
+name: function-avd -- what the push to this host needs
+ansible.builtin.copy:
+  dest: "{{ function_avd_push_dir }}/{{ inventory_hostname }}.json"
+  content: >-
+    {{ {'host': ansible_host | default(inventory_hostname),
+    'user': ansible_user | default(''),
+    'password': ansible_password | default(''),
+    'port': ansible_httpapi_port | default(''),
+    'ssl': ansible_httpapi_use_ssl | default(false) | bool,
+    'validate': ansible_httpapi_validate_certs | default(true) | bool}
+    | to_json }}
