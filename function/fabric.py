@@ -28,6 +28,7 @@ import tempfile
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from importlib.resources import files
 from pathlib import Path
 
 import yaml
@@ -68,21 +69,7 @@ PUSH_DIR_VAR = "function_avd_push_dir"
 # Appended to the play after AVD's role: what the push needs, per host, as Ansible
 # resolves it -- the address, the credentials, and httpapi's transport, with httpapi's
 # own defaults.
-PUSH_TASK = {
-    "name": "function-avd -- what the push to this host needs",
-    "ansible.builtin.copy": {
-        "dest": f"{{{{ {PUSH_DIR_VAR} }}}}/{{{{ inventory_hostname }}}}.json",
-        "content": (
-            "{{ {'host': ansible_host | default(inventory_hostname),"
-            " 'user': ansible_user | default(''),"
-            " 'password': ansible_password | default(''),"
-            " 'port': ansible_httpapi_port | default(''),"
-            " 'ssl': ansible_httpapi_use_ssl | default(false) | bool,"
-            " 'validate': ansible_httpapi_validate_certs | default(true) | bool}"
-            " | to_json }}"
-        ),
-    },
-}
+PUSH_TASK = yaml.safe_load((files("function") / "push-task.yml").read_text(encoding="utf-8"))
 
 _SECRET_KEY = re.compile(r"^[-._a-zA-Z0-9]+$")
 

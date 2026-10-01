@@ -439,6 +439,16 @@ def test_without_extra_vars_only_the_renders_own_are_given(tmp_path):
     assert command.count("-e") == 1
 
 
+def test_the_push_task_writes_into_the_directory_the_render_gives(tmp_path):
+    command = fabric.playbook_command(
+        "ansible-playbook", "inventory/hosts.yml", {}, tmp_path, tmp_path / "push"
+    )
+    var = fabric.PUSH_DIR_VAR
+
+    assert json.loads(command[-1])[var] == str(tmp_path / "push")
+    assert fabric.PUSH_TASK["ansible.builtin.copy"]["dest"].startswith(f"{{{{ {var} }}}}/")
+
+
 def test_a_fabric_input_composes_nothing():
     rsp = run(an_input(f"{NAME}-fabric"))
 
