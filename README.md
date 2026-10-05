@@ -9,7 +9,7 @@ Two Crossplane packages:
 - `configuration-avd`: the API, with the kinds `Fabric`, `FabricInput` and `Device`.
 - `function-avd`: the function that runs AVD. `configuration-avd` installs it.
 
-[netadopt](https://github.com/netclab/netadopt) writes the objects from an AVD
+[netadopt](https://github.com/netclab/netadopt) writes the resources from any AVD
 repository. [example/single-dc-l3ls.yaml](example/single-dc-l3ls.yaml) is what it writes
 for AVD's `single-dc-l3ls` example.
 
@@ -41,7 +41,9 @@ the mirror's address.
 **Applying a Fabric changes the devices.** Each device is configured at the address in
 its Ansible variables (`ansible_host`, `ansible_user`, `ansible_password`, and the
 `ansible_httpapi_*` settings). To use a lab instead, override them in
-`spec.extraVars`.
+`spec.extraVars`, as
+[`netadopt avd lab --extra-vars-out`](https://github.com/netclab/netadopt#building-a-lab-from-the-fabric)
+writes them.
 
 - A push replaces the whole running configuration.
 - The configuration must keep eAPI on, or the device is unreachable after the first push.
