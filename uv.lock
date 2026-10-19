@@ -371,7 +371,7 @@ wheels = [
 
 [[package]]
 name = "function-avd"
-version = "0.2.2"
+version = "0.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -390,7 +390,7 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8.5.0" },
     { name = "crossplane-function-sdk-python", specifier = ">=0.15.1" },
-    { name = "netadopt", extras = ["avd"], specifier = ">=0.7.0" },
+    { name = "netadopt", extras = ["avd"], specifier = ">=0.7.1" },
     { name = "pyavd", specifier = "==6.4.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
 ]
@@ -767,16 +767,16 @@ wheels = [
 
 [[package]]
 name = "netadopt"
-version = "0.7.0"
+version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/49/06b12abb744fa69af7b1ba0cf8f372e123c305cc89cf3183647b98ac74a8/netadopt-0.7.0.tar.gz", hash = "sha256:66bdd3098ede1852343e238bbd5c541f40c28ff313b361cbe367e09d539c5750", size = 46466, upload-time = "2026-09-24T13:29:27.581Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/51/d0/31e03acfb22ea79c8cb9c7e4fcb63cdf3d06f3d849f4b4a2e6f277764517/netadopt-0.7.1.tar.gz", hash = "sha256:db2e50ba5a0f9d88aa05b8bf9292a8ebfb7bdac80057fd224468fc216f06397c", size = 51488, upload-time = "2026-10-19T11:57:28.821Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/51/1b/9061c2b8e80cc8d4d19d8fdc2e135bef1aa141e461c07133d172d7ca22ad/netadopt-0.7.0-py3-none-any.whl", hash = "sha256:85de7eca3f3239a30a1b0efd3da06a0f7da4dfa6308011157c63f003a0bde21a", size = 56589, upload-time = "2026-09-24T13:29:26.391Z" },
+    { url = "https://files.pythonhosted.org/packages/35/78/5c5638df2cf2082ef1afa5e412803805521db17506eb602e5bdfbbf47fba/netadopt-0.7.1-py3-none-any.whl", hash = "sha256:1703f638621d6e380bcdb6f6e2d7352e13242b041c7dd6fa31ced2dbc394d871", size = 57137, upload-time = "2026-10-19T11:57:27.666Z" },
 ]
 
 [package.optional-dependencies]

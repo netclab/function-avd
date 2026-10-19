@@ -38,6 +38,7 @@ from netadopt.api import (
     ensure_collections,
     fit,
     reconstruct,
+    render_env,
     render_extra_vars,
     render_play,
     resolve_ansible,
@@ -383,7 +384,7 @@ def render(fabric: dict, read: Read) -> Render:
 
         env = {
             **os.environ,
-            "ANSIBLE_COLLECTIONS_PATH": str(collections.path),
+            **render_env(collections.path),
             "ANSIBLE_HOME": str(work / "ansible"),
             "ANSIBLE_NOCOLOR": "1",
             "HOME": str(work),
