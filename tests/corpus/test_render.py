@@ -22,6 +22,13 @@ def test_every_host_rendered_has_what_its_push_needs(rendered: fabric.Render):
         assert push["host"], host
 
 
+def test_a_stdout_callback_the_image_lacks_changes_nothing_rendered(with_callback):
+    rendered, golden = with_callback
+
+    assert rendered.problem is None
+    assert rendered.structured == golden
+
+
 def test_the_fabric_composes_one_device_per_host(emitted, rendered: fabric.Render):
     fab, required = emitted
 

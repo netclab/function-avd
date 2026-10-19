@@ -15,6 +15,7 @@ The render is the slow part, so it runs once per repository and every test reads
 from __future__ import annotations
 
 import base64
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -189,6 +190,26 @@ def rendered(repo: Path, emitted) -> fabric.Render:
 @pytest.fixture(scope="session")
 def golden(repo: Path) -> dict[str, dict]:
     """The structured configs AVD commits, by host."""
+    return _golden(repo)
+
+
+@pytest.fixture(scope="session")
+def with_callback(tmp_path_factory: pytest.TempPathFactory) -> tuple[fabric.Render, dict]:
+    """single-dc-l3ls with `stdout_callback = yaml` in its ansible.cfg, rendered, and its
+    goldens: a callback of community.general, which no collection in the image holds."""
+    source = AVD / "examples" / "single-dc-l3ls"
+    if not source.is_dir():
+        pytest.skip("no AVD checkout: run `git submodule update --init`")
+    repo = tmp_path_factory.mktemp("callback") / source.name
+    shutil.copytree(source, repo)
+    cfg = repo / "ansible.cfg"
+    cfg.write_text(cfg.read_text().replace("[defaults]\n", "[defaults]\nstdout_callback = yaml\n"))
+    docs = _emit(repo)
+    fab = next(doc for doc in docs if doc["kind"] == "Fabric")
+    return fabric.render(fab, fabric.gather(fab, answered(fab, docs))), _golden(repo)
+
+
+def _golden(repo: Path) -> dict[str, dict]:
     return {
         file.stem: yaml.load(file.read_text(encoding="utf-8"), Loader=yaml.CSafeLoader)
         for file in sorted((repo / GOLDEN).glob("*.yml"))
