@@ -1,6 +1,6 @@
 [project]
 name = "function-avd"
-version = "0.2.3"
+version = "0.2.4"
 description = "A Crossplane composition function that renders a fabric with Arista AVD and pushes each device's config"
 authors = [
     { name = "mbakalarski", email = "64490638+mbakalarski@users.noreply.github.com" }
@@ -9,7 +9,7 @@ requires-python = ">=3.12"
 dependencies = [
     "click>=8.5.0",
     "crossplane-function-sdk-python>=0.15.1",
-    "netadopt[avd]>=0.7.1",
+    "netadopt[avd]>=0.9.0",
     "pyavd==6.4.0",
     "pyyaml>=6.0.3",
 ]
