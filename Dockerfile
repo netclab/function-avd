@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS build
+FROM python:3.15-slim AS build
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /bin/
 
@@ -18,7 +18,7 @@ COPY function ./function
 RUN uv sync --frozen --no-dev --no-editable
 
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # The base image ships the standard library without bytecode, and uid 2000 cannot write it:
 # every Python that Ansible starts would compile it again.
