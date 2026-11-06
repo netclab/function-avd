@@ -10,7 +10,7 @@ dependencies = [
     "click>=8.5.0",
     "crossplane-function-sdk-python>=0.15.1",
     "netadopt[avd]>=0.9.0",
-    "pyavd==6.4.0",
+    "pyavd==6.5.0",
     "pyyaml>=6.0.3",
 ]
 
